@@ -13,7 +13,7 @@ Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lu
 - **Filtre** Tout / Lumières / Prises / Autres en haut de la carte.
 - **Deux affichages** : liste détaillée ou boutons. Éditeur visuel. Aucune dépendance.
 
-**[▶ Démo](docs/demo.html)** : une maison fictive, avec la liste de ce que la détection écarte, et pourquoi.
+**[▶ Essayer la démo en ligne](https://xdlog.github.io/commandes-card/docs/demo.html)** : une maison fictive, avec la liste de ce que la détection écarte, et pourquoi.
 
 ## Installation
 

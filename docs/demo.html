@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte Commandes · démo</title>
+<meta name="description" content="Démonstration de la carte Commandes pour Home Assistant : lampes, prises, interrupteurs, ventilateurs et volets d'une maison fictive.">
+<style>
+  :root {
+    --bg: #0f1724; --panel: #172133; --line: #2a3850; --text: #e7edf5; --muted: #8fa0b8;
+    --accent: #1d93e3; --btn: #1e2a3f; --btn-on: #2b3d5c;
+    --card-background-color: #1c1c1c; --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b;
+    --divider-color: rgba(225, 225, 225, .12); --primary-color: #03a9f4; --ha-card-border-radius: 12px;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #eef2f7; --panel: #ffffff; --line: #d6dde8; --text: #1b2433; --muted: #5b6b82;
+    --accent: #1673b8; --btn: #f2f5f9; --btn-on: #dde7f5;
+    --card-background-color: #ffffff; --primary-text-color: #212121; --secondary-text-color: #727272; --divider-color: rgba(0, 0, 0, .12);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 2px; }
+  .lead { margin: 0 0 22px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .stage { order: -1; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .panel h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  .panel h2:not(:first-child) { margin-top: 18px; }
+  .ctl { margin-bottom: 12px; }
+  .ctl-l { font-size: .85rem; margin-bottom: 6px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg button { font: inherit; font-size: .82rem; padding: 5px 11px; border-radius: 999px; cursor: pointer; border: 1px solid var(--line); background: var(--btn); color: var(--text); }
+  .seg button[aria-pressed="true"] { background: var(--btn-on); border-color: var(--accent); font-weight: 600; }
+  .stage { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .frame { margin: 0 auto; width: 100%; }
+  .frame[data-width="mobile"] { max-width: 440px; }
+  .frame[data-width="large"] { max-width: 760px; }
+  pre { margin: 0; padding: 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; overflow-x: auto; }
+  .ignored { margin: 0; padding: 0; list-style: none; font-size: .84rem; }
+  .ignored li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .ignored li:last-child { border: 0; }
+  .ignored code { font-size: .78rem; word-break: break-all; min-width: 0; }
+  .ignored span { flex: none; max-width: 45%; }
+  .ignored span { color: var(--muted); text-align: right; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: var(--panel);
+    border: 1px solid var(--accent); font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: calc(100% - 32px); }
+  .toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Carte Commandes · démo</h1>
+  <p class="lead">Lampes, prises, interrupteurs, ventilateur et volets d'une maison fictive, sans Home Assistant. Rien n'est envoyé.</p>
+  <div class="grid">
+    <aside class="panel" aria-label="Réglages de la démo">
+      <h2>Affichage</h2>
+      <div class="ctl"><div class="ctl-l">Page</div><div class="seg" data-key="page"><button data-v="dark">Sombre</button><button data-v="light">Clair</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>theme</code></div><div class="seg" data-key="theme"><button data-v="v2">Bleu nuit</button><button data-v="auto">Auto</button><button data-v="ha">Home Assistant</button></div></div>
+      <div class="ctl"><div class="ctl-l">Largeur</div><div class="seg" data-key="width"><button data-v="mobile">Téléphone</button><button data-v="large">Tablette / PC</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>layout</code></div><div class="seg" data-key="layout"><button data-v="list">Liste</button><button data-v="buttons">Boutons</button></div></div>
+      <h2>Contenu</h2>
+      <div class="ctl"><div class="ctl-l"><code>domains</code></div><div class="seg" data-key="domains"><button data-v="std">light, switch, fan</button><button data-v="cover">+ cover</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>show_off</code></div><div class="seg" data-key="show_off"><button data-v="yes">Affiché</button><button data-v="no">Masqué</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>sort</code></div><div class="seg" data-key="sort"><button data-v="name">Nom</button><button data-v="power">Puissance</button><button data-v="kind">Type</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>confirm</code></div><div class="seg" data-key="confirm"><button data-v="auto">Auto</button><button data-v="always">Toujours</button><button data-v="never">Jamais</button></div></div>
+      <div class="ctl"><div class="ctl-l"><code>groups</code></div><div class="seg" data-key="groups"><button data-v="auto">Auto</button><button data-v="show">Les deux</button><button data-v="only">Groupes</button></div></div>
+      <h2>Écarté par la détection</h2>
+      <ul class="ignored" id="ignored"></ul>
+    </aside>
+    <main class="stage">
+      <div class="frame" id="frame"></div>
+      <section class="panel"><h2>Configuration</h2><pre id="yaml"></pre></section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../commandes-card.js"></script>
+<script>
+(() => {
+  "use strict";
+  if (!customElements.get("ha-card")) customElements.define("ha-card", class extends HTMLElement {
+    constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML = "<style>:host{display:block}</style><slot></slot>"; }
+  });
+  if (!customElements.get("ha-icon")) customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    connectedCallback() { this._draw(); }
+    attributeChangedCallback() { this._draw(); }
+    _draw() {
+      const name = (this.getAttribute("icon") || "").replace(/^mdi:/, "");
+      if (!name) return;
+      const url = `https://cdn.jsdelivr.net/npm/@mdi/svg@7.4.47/svg/${name}.svg`;
+      this.style.cssText += `;display:inline-block;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);flex:none;` +
+        `background:currentColor;-webkit-mask:url(${url}) center/contain no-repeat;mask:url(${url}) center/contain no-repeat;`;
+    }
+  });
+
+  const defaults = { page: "dark", theme: "v2", width: "mobile", layout: "list", domains: "std", show_off: "yes", sort: "name", confirm: "auto", groups: "auto" };
+  let state = { ...defaults };
+  try { state = { ...defaults, ...JSON.parse(localStorage.getItem("commandes-card-demo") || "{}") }; } catch (e) { /* ignoré */ }
+
+  const floors = { rdc: { floor_id: "rdc", level: 0 }, etage: { floor_id: "etage", level: 1 }, ext: { floor_id: "ext", level: 2 } };
+  const areas = {
+    salon: { area_id: "salon", name: "Salon", icon: "mdi:sofa", floor_id: "rdc" }, cuisine: { area_id: "cuisine", name: "Cuisine", icon: "mdi:countertop", floor_id: "rdc" },
+    bureau: { area_id: "bureau", name: "Bureau", icon: "mdi:desk", floor_id: "etage" }, garage: { area_id: "garage", name: "Garage", icon: "mdi:garage", floor_id: "ext" },
+  };
+  const devices = {
+    hue_plaf: { id: "hue_plaf", name: "Plafonnier salon", model: "Hue color", area_id: "salon" },
+    hue_lamp: { id: "hue_lamp", name: "Lampadaire", model: "Hue white ambiance", area_id: "salon" },
+    tv: { id: "tv", name: "Prise TV", model: "TS011F", manufacturer: "_TZ3000", area_id: "salon" },
+    chevet: { id: "chevet", name: "Prise lampe", model: "Tapo P110", area_id: "salon" },
+    volet: { id: "volet", name: "Volet salon", model: "Somfy", area_id: "salon" },
+    congel: { id: "congel", name: "Congélateur", model: "Shelly Plug S", area_id: "cuisine" },
+    lv: { id: "lv", name: "Lave-vaisselle", model: "Nous A1Z", area_id: "cuisine" },
+    s2pm: { id: "s2pm", name: "Shelly 2PM cuisine", model: "SNSW-102P16EU", area_id: "cuisine" },
+    ruban: { id: "ruban", name: "Ruban LED", model: "WLED", area_id: "cuisine" },
+    pc: { id: "pc", name: "Prise PC", model: "Tapo P110", area_id: "bureau" },
+    fan: { id: "fan", name: "Ventilateur", model: "Dyson", area_id: "bureau" },
+    lampe_b: { id: "lampe_b", name: "Lampe bureau", model: "IKEA", area_id: "bureau" },
+    nas: { id: "nas", name: "DS920+", model: "DS920+", area_id: "bureau" },
+    usw: { id: "usw", name: "USW Lite 8 PoE", model: "USL8LP", area_id: "bureau" },
+    trott: { id: "trott", name: "Chargeur trottinette", model: "Shelly Plug S", area_id: "garage" },
+    garage: { id: "garage", name: "Porte garage", model: "Meross", area_id: "garage" },
+    adguard: { id: "adguard", name: "AdGuard Home", entry_type: "service" },
+    z2m: { id: "z2m", name: "Zigbee2MQTT Bridge", model: "Bridge" },
+  };
+  const on = { "light.plafonnier_salon": true, "light.lampadaire": false, "switch.prise_tv": true, "light.lampe_chevet": true, "switch.congelateur": true,
+    "switch.lave_vaisselle": false, "switch.shelly_2pm_cuisine_channel_1": false, "switch.shelly_2pm_cuisine_channel_2": true, "light.ruban_led": false,
+    "switch.prise_pc": true, "fan.ventilateur": true, "light.lampe_bureau": false, "switch.chargeur_trottinette": true };
+  const light = { "light.plafonnier_salon": { b: 190, rgb: [255, 140, 0], mode: "hs", modes: ["color_temp", "hs"] }, "light.lampadaire": { b: 255, k: 2700, mode: "color_temp", modes: ["color_temp"] },
+    "light.ruban_led": { b: 128, rgb: [0, 200, 255], mode: "rgb", modes: ["rgb"] }, "light.lampe_bureau": { b: 200, mode: "brightness", modes: ["brightness"] } };
+  let fanPct = 40, volet = 60, garageDoor = "closed";
+  const wob = (b) => b * (0.92 + 0.16 * ((Date.now() / 7000) % 1));
+
+  function hass() {
+    const states = {}, entities = {};
+    const add = (id, st, attrs, reg = {}) => { states[id] = { entity_id: id, state: st, attributes: attrs }; entities[id] = { entity_id: id, platform: "demo", ...reg }; };
+    const sw = (id) => (on[id] ? "on" : "off");
+    const sensors = (dev, pre, w, e, opts = {}) => {
+      add(`sensor.${pre}_power`, (w).toFixed(1), { device_class: "power", unit_of_measurement: "W", friendly_name: `${pre} power` }, { device_id: dev });
+      if (e != null) add(`sensor.${pre}_energy${opts.today ? "_today" : ""}`, String(e), { device_class: "energy", unit_of_measurement: "kWh", friendly_name: `${pre} energy` }, { device_id: dev });
+      if (opts.va) { add(`sensor.${pre}_voltage`, "231", { device_class: "voltage", unit_of_measurement: "V" }, { device_id: dev }); add(`sensor.${pre}_current`, (w / 231).toFixed(2), { device_class: "current", unit_of_measurement: "A" }, { device_id: dev }); }
+    };
+    for (const [id, L] of Object.entries(light)) {
+      const dev = { "light.plafonnier_salon": "hue_plaf", "light.lampadaire": "hue_lamp", "light.ruban_led": "ruban", "light.lampe_bureau": "lampe_b" }[id];
+      add(id, sw(id), { friendly_name: devices[dev].name, supported_color_modes: L.modes, color_mode: on[id] ? L.mode : null, brightness: on[id] ? L.b : null,
+        rgb_color: on[id] ? L.rgb || null : null, color_temp_kelvin: on[id] && L.k ? L.k : null, min_color_temp_kelvin: 2200, max_color_temp_kelvin: 6500 }, { device_id: dev });
+    }
+    add("light.salon", on["light.plafonnier_salon"] || on["light.lampadaire"] ? "on" : "off", { friendly_name: "Salon", entity_id: ["light.plafonnier_salon", "light.lampadaire"],
+      supported_color_modes: ["brightness"], color_mode: "brightness", brightness: 200, icon: "mdi:lightbulb-group" }, { platform: "group", area_id: "salon" });
+    // Prise Tuya : la commande, plus deux réglages exposés en interrupteurs SANS catégorie
+    add("switch.prise_tv", sw("switch.prise_tv"), { friendly_name: "Prise TV", device_class: "outlet", icon: "mdi:television" }, { device_id: "tv", platform: "tuya" });
+    add("switch.prise_tv_child_lock", "off", { friendly_name: "Prise TV Child lock" }, { device_id: "tv", platform: "tuya" });
+    add("switch.prise_tv_led_indicator", "on", { friendly_name: "Prise TV LED indicator" }, { device_id: "tv", platform: "tuya" });
+    sensors("tv", "prise_tv", on["switch.prise_tv"] ? wob(95) : 0, 412.6, { va: true });
+    // lampe de chevet sur une prise, convertie en lumière (switch_as_x) : le switch d'origine est masqué
+    add("switch.prise_lampe", sw("light.lampe_chevet"), { friendly_name: "Prise lampe" }, { device_id: "chevet", hidden: true, hidden_by: "integration", platform: "tplink" });
+    add("light.lampe_chevet", sw("light.lampe_chevet"), { friendly_name: "Lampe de chevet", supported_color_modes: ["onoff"], color_mode: "onoff" }, { device_id: "chevet", platform: "switch_as_x" });
+    sensors("chevet", "prise_lampe", on["light.lampe_chevet"] ? 8.6 : 0, 3.1);
+    add("cover.volet_salon", volet > 0 ? "open" : "closed", { friendly_name: "Volet salon", current_position: volet, supported_features: 15, device_class: "shutter" }, { device_id: "volet" });
+    add("switch.congelateur", sw("switch.congelateur"), { friendly_name: "Congélateur", icon: "mdi:fridge-outline" }, { device_id: "congel", platform: "shelly" });
+    sensors("congelateur", "congelateur", on["switch.congelateur"] ? wob(82) : 0, 288.9);
+    entities["sensor.congelateur_power"].device_id = "congel"; entities["sensor.congelateur_energy"].device_id = "congel";
+    add("switch.lave_vaisselle", sw("switch.lave_vaisselle"), { friendly_name: "Lave-vaisselle", icon: "mdi:dishwasher" }, { device_id: "lv", platform: "zha" });
+    sensors("lv", "lave_vaisselle", on["switch.lave_vaisselle"] ? wob(1950) : 0, 734.1);
+    // Shelly 2PM : deux voies, deux mesures sur le même appareil
+    add("switch.shelly_2pm_cuisine_channel_1", sw("switch.shelly_2pm_cuisine_channel_1"), { friendly_name: "Hotte", icon: "mdi:stove" }, { device_id: "s2pm", platform: "shelly" });
+    add("switch.shelly_2pm_cuisine_channel_2", sw("switch.shelly_2pm_cuisine_channel_2"), { friendly_name: "Spots plan de travail" }, { device_id: "s2pm", platform: "shelly" });
+    sensors("s2pm", "shelly_2pm_cuisine_channel_1", on["switch.shelly_2pm_cuisine_channel_1"] ? wob(180) : 0, 21.4);
+    sensors("s2pm", "shelly_2pm_cuisine_channel_2", on["switch.shelly_2pm_cuisine_channel_2"] ? wob(42) : 0, 9.8);
+    add("switch.prise_pc", sw("switch.prise_pc"), { friendly_name: "Prise PC", icon: "mdi:desktop-tower-monitor" }, { device_id: "pc", platform: "tplink" });
+    sensors("pc", "prise_pc", on["switch.prise_pc"] ? wob(148) : 0, 0.92, { today: true });
+    add("fan.ventilateur", sw("fan.ventilateur"), { friendly_name: "Ventilateur", percentage: on["fan.ventilateur"] ? fanPct : 0, supported_features: 1 }, { device_id: "fan" });
+    add("switch.ds920_home_mode", "off", { friendly_name: "DS920+ Home mode" }, { device_id: "nas", platform: "synology_dsm" });
+    add("switch.usw_lite_8_poe_port_3_poe", "on", { friendly_name: "USW Lite 8 PoE Port 3 PoE", device_class: "outlet" }, { device_id: "usw", platform: "unifi" });
+    add("switch.chargeur_trottinette", sw("switch.chargeur_trottinette"), { friendly_name: "Chargeur trottinette", icon: "mdi:scooter-electric" }, { device_id: "trott", platform: "shelly" });
+    sensors("trott", "chargeur_trottinette", on["switch.chargeur_trottinette"] ? wob(240) : 0, 0.42, { today: true });
+    add("cover.porte_garage", garageDoor, { friendly_name: "Porte garage", device_class: "garage", supported_features: 3 }, { device_id: "garage" });
+    add("switch.adguard_home_protection", "on", { friendly_name: "AdGuard Home Protection" }, { device_id: "adguard", platform: "adguard" });
+    add("switch.zigbee2mqtt_bridge_permit_join", "off", { friendly_name: "Zigbee2MQTT Bridge Permit join" }, { device_id: "z2m", platform: "mqtt", entity_category: "config" });
+    add("switch.mode_vacances", "off", { friendly_name: "Mode vacances" }, { platform: "template" });
+    add("scene.soiree", "2026-11-24", { friendly_name: "Soirée", icon: "mdi:sofa" }, {});
+    add("scene.cinema", "2026-11-24", { friendly_name: "Cinéma", icon: "mdi:movie-open" }, {});
+    return {
+      states, entities,
+      devices, areas, floors, language: "fr", locale: { language: "fr" }, themes: { darkMode: state.page === "dark" },
+      callService(domain, service, data) {
+        const ids = [].concat(data?.entity_id || []);
+        for (const id of ids) {
+          if (domain === "cover") {
+            if (id === "cover.porte_garage") garageDoor = service === "open_cover" ? "open" : service === "close_cover" ? "closed" : service === "toggle" ? (garageDoor === "open" ? "closed" : "open") : garageDoor;
+            else volet = service === "open_cover" ? 100 : service === "close_cover" ? 0 : service === "set_cover_position" ? data.position : service === "toggle" ? (volet ? 0 : 100) : volet;
+          } else if (domain === "scene") say(`Scène ${id} lancée`);
+          else {
+            if (service === "set_percentage") { fanPct = data.percentage; on[id] = data.percentage > 0; }
+            else on[id] = service === "turn_on" ? true : service === "turn_off" ? false : !on[id];
+            if (light[id]) { if (data.brightness_pct) light[id].b = Math.round(data.brightness_pct * 2.55);
+              if (data.rgb_color) { light[id].rgb = data.rgb_color; light[id].mode = light[id].modes.includes("hs") ? "hs" : "rgb"; }
+              if (data.color_temp_kelvin) { light[id].k = data.color_temp_kelvin; light[id].mode = "color_temp"; } }
+          }
+        }
+        setTimeout(() => { if (card) card.hass = hass(); }, 120);
+      },
+    };
+  }
+
+  function config() {
+    const c = { type: "custom:commandes-card" };
+    if (state.theme !== "v2") c.theme = state.theme;
+    if (state.layout === "buttons") c.layout = "buttons";
+    if (state.domains === "cover") c.domains = ["light", "switch", "fan", "cover"];
+    if (state.show_off === "no") c.show_off = false;
+    if (state.sort !== "name") c.sort = state.sort;
+    if (state.confirm !== "auto") c.confirm = state.confirm;
+    if (state.groups !== "auto") c.groups = state.groups;
+    c.locked = ["switch.congelateur"];
+    c.show_scenes = true;
+    return c;
+  }
+  const yaml = (c) => Object.entries(c).map(([k, v]) => Array.isArray(v) ? `${k}:\n${v.map((x) => `  - ${x}`).join("\n")}` : `${k}: ${v}`).join("\n");
+  const WHY = {
+    "switch.prise_tv_child_lock": "réglage (sécurité enfant)", "switch.prise_tv_led_indicator": "réglage (voyant)", "switch.prise_lampe": "masqué (devenu lumière)",
+    "switch.ds920_home_mode": "intégration NAS", "switch.usw_lite_8_poe_port_3_poe": "intégration réseau", "switch.adguard_home_protection": "service logiciel",
+    "switch.zigbee2mqtt_bridge_permit_join": "catégorie configuration", "switch.mode_vacances": "sans appareil ni pièce", "light.salon": "groupe : ses lumières sont affichées",
+    "cover.volet_salon": "type non demandé (domains)", "cover.porte_garage": "type non demandé (domains)",
+  };
+
+  const frame = document.getElementById("frame"), toast = document.getElementById("toast");
+  let card, toastTimer;
+  const say = (text) => { toast.textContent = text; toast.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("on"), 2600); };
+
+  function render() {
+    document.documentElement.dataset.theme = state.page;
+    frame.dataset.width = state.width;
+    document.querySelectorAll(".seg").forEach((seg) => seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === state[seg.dataset.key]))));
+    const c = config();
+    document.getElementById("yaml").textContent = yaml(c);
+    if (!card) {
+      card = document.createElement("commandes-card");
+      card.addEventListener("hass-more-info", (ev) => say(`Dans Home Assistant, la fiche de ${ev.detail.entityId} s'ouvrirait ici.`));
+      frame.replaceChildren(card);
+    }
+    card.setConfig(c);
+    const h = hass();
+    card.hass = h;
+    const kept = new Set(card._items().map((it) => it.id));
+    document.getElementById("ignored").innerHTML = Object.keys(h.states).filter((id) => /^(light|switch|cover|fan)\./.test(id) && !kept.has(id))
+      .map((id) => `<li><code>${id}</code><span>${WHY[id] || ""}</span></li>`).join("");
+  }
+  document.querySelectorAll(".seg").forEach((seg) => seg.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    state[seg.dataset.key] = b.dataset.v;
+    try { localStorage.setItem("commandes-card-demo", JSON.stringify(state)); } catch (e) { /* ignoré */ }
+    render();
+  }));
+  render();
+  setInterval(() => { if (card) card.hass = hass(); }, 5000);
+})();
+</script>
+</body>
+</html>

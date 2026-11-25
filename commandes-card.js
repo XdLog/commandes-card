@@ -9,7 +9,7 @@
  * Le style, les gestes et une partie du code viennent de ces deux cartes.
  */
 (() => {
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.4.1";
 
 const DEFAULTS = {
   title: "",
@@ -321,7 +321,8 @@ class CommandesCard extends HTMLElement {
     const root = this.shadowRoot;
     root.addEventListener("click", (ev) => {
       if (this._held) { this._held = false; ev.stopPropagation(); return; } // appui long : la fiche est déjà ouverte
-      if (ev.target.matches?.("input[type=range]")) return;
+      // curseur : un appui ne fait rien (ni saut de valeur, ni marche / arrêt de la tuile)
+      if (ev.target.closest?.(".cc-rng")) { ev.stopPropagation(); return; }
       const el = ev.target.closest?.("[data-act]");
       if (!el) return;
       ev.stopPropagation();
@@ -360,11 +361,50 @@ class CommandesCard extends HTMLElement {
       else if (r.dataset.kind === "fan") this._call("fan", "set_percentage", { entity_id: id, percentage: v });
       else if (r.dataset.kind === "pos") this._call("cover", "set_cover_position", { entity_id: id, position: v });
     });
+    /*
+     * Curseurs à glissement relatif : l'appui ne change rien ; seul un glissement horizontal de plus de 8 px
+     * règle la valeur, à partir de la valeur actuelle. Un geste vertical laisse défiler la page.
+     */
+    root.addEventListener("pointerdown", (ev) => {
+      const wrap = ev.target.closest?.(".cc-rng");
+      if (!wrap) return;
+      const r = wrap.querySelector("input[type=range]");
+      this._sl = { wrap, r, x: ev.clientX, y: ev.clientY, v0: Number(r.value), w: wrap.getBoundingClientRect().width || 1, moved: false, pid: ev.pointerId };
+    }, true);
+    root.addEventListener("pointermove", (ev) => {
+      const sl = this._sl;
+      if (!sl || ev.pointerId !== sl.pid) return;
+      const dx = ev.clientX - sl.x, dy = ev.clientY - sl.y;
+      if (!sl.moved) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { this._sl = null; return; } // défilement vertical
+        if (Math.abs(dx) < 8) return;
+        sl.moved = true;
+        this._dragging = true;
+        sl.wrap.classList.add("drag");
+        try { sl.wrap.setPointerCapture(sl.pid); } catch (e) { /* pas de capture */ }
+        sl.x = ev.clientX; // part de la position actuelle, sans saut
+        return;
+      }
+      ev.preventDefault();
+      const min = Number(sl.r.min), max = Number(sl.r.max), step = Number(sl.r.step) || 1;
+      const v = clamp(Math.round((sl.v0 + (dx / sl.w) * (max - min)) / step) * step, min, max);
+      if (String(v) !== sl.r.value) { sl.r.value = String(v); sl.r.dispatchEvent(new Event("input", { bubbles: true })); }
+    });
+    const endSlide = (ev) => {
+      const sl = this._sl;
+      if (!sl || ev.pointerId !== sl.pid) return;
+      this._sl = null;
+      sl.wrap.classList.remove("drag");
+      if (sl.moved && Number(sl.r.value) !== sl.v0) sl.r.dispatchEvent(new Event("change", { bubbles: true }));
+      else if (sl.moved) { this._dragging = false; }
+    };
+    root.addEventListener("pointerup", endSlide);
+    root.addEventListener("pointercancel", endSlide);
     // appui long : fiche de Home Assistant
     root.addEventListener("pointerdown", (ev) => {
       clearTimeout(this._holdTimer);
       this._held = false;
-      if (ev.target.matches?.("input[type=range]")) { this._dragging = true; return; }
+      if (ev.target.closest?.(".cc-rng")) return;
       const el = ev.target.closest?.("[data-hold]");
       if (!el || ev.target.closest(".cc-w, button")) return;
       this._holdTimer = setTimeout(() => { this._held = true; this._disarm(); this._moreInfo(el.dataset.hold); }, 550);
@@ -1030,8 +1070,8 @@ class CommandesCard extends HTMLElement {
     const act = v.canToggle ? ` data-act="toggle" data-id="${esc(it.id)}" role="${v.dom === "cover" || RUN.has(v.dom) ? "button" : "switch"}" aria-checked="${v.on}" tabindex="0" title="${esc(T.hold)}"`
       : it.locked ? ` title="${esc(T.locked)}"` : "";
     const slider = v.on && !armed && !it.locked
-      ? v.dimmable ? `<input class="cc-bt-r" type="range" min="1" max="100" step="1" value="${v.pct}" data-kind="bri" data-id="${esc(it.id)}" aria-label="${esc(T.brightness)}">`
-        : v.fanPct !== null ? `<input class="cc-bt-r" type="range" min="0" max="100" step="1" value="${v.fanPct}" data-kind="fan" data-id="${esc(it.id)}" aria-label="${esc(T.speed)}">` : ""
+      ? v.dimmable ? `<span class="cc-rng cc-bt-r"><input type="range" min="1" max="100" step="1" value="${v.pct}" data-kind="bri" data-id="${esc(it.id)}" aria-label="${esc(T.brightness)}"></span>`
+        : v.fanPct !== null ? `<span class="cc-rng cc-bt-r"><input type="range" min="0" max="100" step="1" value="${v.fanPct}" data-kind="fan" data-id="${esc(it.id)}" aria-label="${esc(T.speed)}"></span>` : ""
       : "";
     return `<div class="${this._classes(it, v, "cc-bt cc-item")}"${v.style ? ` style="${v.style}"` : ""}${act}${hold ? ` data-hold="${esc(hold)}"` : ""}>
       ${it.locked ? `<ha-icon class="cc-bt-lock" icon="mdi:lock"></ha-icon>` : ""}
@@ -1079,8 +1119,8 @@ class CommandesCard extends HTMLElement {
         const kmin = Number(v.a.min_color_temp_kelvin) || 2000, kmax = Number(v.a.max_color_temp_kelvin) || 6500;
         const kval = clamp(Number(v.a.color_temp_kelvin) || Math.round((kmin + kmax) / 2), kmin, kmax);
         return `<div class="cc-slider ct"><span>${esc(T.warm)}</span>
-        <input type="range" min="${kmin}" max="${kmax}" step="50" value="${kval}" data-kind="ct" data-id="${esc(it.id)}" aria-label="${esc(T.white)}"
-          style="--k1:${kelvinCss(kmin)};--k2:${kelvinCss(kmax)}"><span>${esc(T.cold)}</span></div>`;
+        <span class="cc-rng"><input type="range" min="${kmin}" max="${kmax}" step="50" value="${kval}" data-kind="ct" data-id="${esc(it.id)}" aria-label="${esc(T.white)}"
+          style="--k1:${kelvinCss(kmin)};--k2:${kelvinCss(kmax)}"></span><span>${esc(T.cold)}</span></div>`;
       })() : ""}
       ${v.color ? `<div class="cc-dots" role="group" aria-label="${esc(T.color)}">${SWATCHES.map((rgb) =>
         `<button class="cc-dot" data-act="rgb" data-id="${esc(it.id)}" data-rgb="${esc(JSON.stringify(rgb))}" style="background:${rgbCss(rgb)}" aria-label="${esc(T.color)} ${rgb.join(",")}"></button>`).join("")}</div>` : ""}
@@ -1089,12 +1129,12 @@ class CommandesCard extends HTMLElement {
 
     const slider = v.on && !it.locked && !armed
       ? v.dimmable ? `<div class="cc-slider"><ha-icon icon="mdi:brightness-6"></ha-icon>
-          <input type="range" min="1" max="100" step="1" value="${v.pct}" data-kind="bri" data-id="${esc(it.id)}" aria-label="${esc(T.brightness)}"><output>${v.pct} %</output></div>`
+          <span class="cc-rng"><input type="range" min="1" max="100" step="1" value="${v.pct}" data-kind="bri" data-id="${esc(it.id)}" aria-label="${esc(T.brightness)}"></span><output>${v.pct} %</output></div>`
         : v.fanPct !== null ? `<div class="cc-slider"><ha-icon icon="mdi:fan"></ha-icon>
-          <input type="range" min="0" max="100" step="1" value="${v.fanPct}" data-kind="fan" data-id="${esc(it.id)}" aria-label="${esc(T.speed)}"><output>${v.fanPct} %</output></div>` : ""
+          <span class="cc-rng"><input type="range" min="0" max="100" step="1" value="${v.fanPct}" data-kind="fan" data-id="${esc(it.id)}" aria-label="${esc(T.speed)}"></span><output>${v.fanPct} %</output></div>` : ""
       : v.dom === "cover" && v.pos !== null && !v.na && (Number(v.a.supported_features) & 4)
         ? `<div class="cc-slider"><ha-icon icon="mdi:arrow-up-down"></ha-icon>
-          <input type="range" min="0" max="100" step="1" value="${v.pos}" data-kind="pos" data-id="${esc(it.id)}" aria-label="${esc(T.up)}"><output>${v.pos} %</output></div>` : "";
+          <span class="cc-rng"><input type="range" min="0" max="100" step="1" value="${v.pos}" data-kind="pos" data-id="${esc(it.id)}" aria-label="${esc(T.up)}"></span><output>${v.pos} %</output></div>` : "";
 
     const iconBtn = v.canToggle && v.dom !== "cover"
       ? `<button class="cc-ico" data-act="toggle" data-id="${esc(it.id)}" aria-label="${esc(T.toggle)}"><ha-icon icon="${esc(v.icon)}"></ha-icon></button>`
@@ -1672,6 +1712,13 @@ ha-card.light .cc-item.on .cc-ico ha-icon, ha-card.th-ha.light .cc-item.on .cc-i
 .cc-slider output { min-width: 42px; text-align: right; color: var(--med-text); font-weight: 600; }
 .cc-item:not(.tinted) { --slider: var(--med-accent); }
 .cc-item.tinted { --slider: var(--ink); }
+/* curseur à glissement relatif : la zone reçoit les gestes, le curseur natif n'en reçoit aucun */
+.cc-rng { flex: 1; min-width: 0; display: flex; align-items: center; padding: 6px 0; margin: -6px 0; touch-action: pan-y; cursor: ew-resize;
+  -webkit-user-select: none; user-select: none; }
+.cc-rng input[type=range] { pointer-events: none; width: 100%; }
+.cc-rng.drag input[type=range]::-webkit-slider-thumb { transform: scale(1.25); }
+.cc-rng.drag input[type=range]::-moz-range-thumb { transform: scale(1.25); }
+.cc-bt .cc-rng { width: 100%; flex: none; margin-top: 2px; }
 input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 22px; background: none; margin: 0; cursor: pointer; }
 input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 5px;
   background: linear-gradient(90deg, var(--slider) var(--p, 50%), color-mix(in srgb, var(--med-text) 15%, transparent) var(--p, 50%)); }
@@ -1714,7 +1761,7 @@ ha-card.light .cc-bt.on > .cc-bt-i, ha-card.th-ha.light .cc-bt.on > .cc-bt-i { f
 .cc-bt small { font-size: .7rem; color: var(--med-muted); }
 .cc-bt .cc-bt-lock { position: absolute; top: 8px; right: 8px; --mdc-icon-size: 14px; color: var(--med-muted); }
 .cc-bt.locked[data-hold] { cursor: pointer; }
-.cc-bt .cc-bt-r { width: 100%; flex: none; margin-top: 2px; touch-action: pan-y; }
+
 .empty { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px 4px; font-size: .88rem; }
 .empty span { color: var(--med-muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

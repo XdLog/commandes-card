@@ -42,7 +42,7 @@ type: custom:commandes-card
 | Appui long | Fiche de Home Assistant |
 | Clic sur le nom | Fiche ; pour une ampoule blanc / couleur : réglages de couleur |
 | Clic sur la puissance | Fiche du capteur, avec son historique |
-| Curseur | Luminosité, vitesse du ventilateur ou position du volet (envoyé au relâchement) |
+| Glisser sur un curseur | Luminosité, blanc, vitesse du ventilateur ou position du volet, à partir de la valeur actuelle (envoyé au relâchement). Un simple appui ou un défilement vertical ne change rien |
 | Clic sur une pièce | Replier ou déplier (mémorisé) |
 
 ## Choisir ce qui s'affiche
@@ -180,6 +180,10 @@ modes:
 Couleurs : `green`, `orange`, `red`, `blue`, `yellow`, `purple`, `grey`, ou toute couleur CSS.
 
 ## Historique des versions
+
+### 0.4.1
+
+- 🐛 Curseurs : un appui sur la piste ou un défilement vertical ne dérègle plus la luminosité. Seul un glissement horizontal volontaire règle la valeur, à partir de la valeur actuelle, sans saut.
 
 ### 0.4.0
 

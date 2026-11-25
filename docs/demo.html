@@ -136,9 +136,11 @@
   };
   const on = { "light.plafonnier_salon": true, "light.lampadaire": false, "switch.prise_tv": true, "light.lampe_chevet": true, "switch.congelateur": true,
     "switch.lave_vaisselle": false, "switch.shelly_2pm_cuisine_channel_1": false, "switch.shelly_2pm_cuisine_channel_2": true, "light.ruban_led": false,
-    "switch.prise_pc": true, "fan.ventilateur": true, "light.lampe_bureau": false, "switch.chargeur_trottinette": true };
+    "input_boolean.absence": false, "input_boolean.mode_nuit": false, "switch.prise_pc": true, "fan.ventilateur": true, "light.lampe_bureau": false, "switch.chargeur_trottinette": true };
   const light = { "light.plafonnier_salon": { b: 190, rgb: [255, 140, 0], mode: "hs", modes: ["color_temp", "hs"] }, "light.lampadaire": { b: 255, k: 2700, mode: "color_temp", modes: ["color_temp"] },
     "light.ruban_led": { b: 128, rgb: [0, 200, 255], mode: "rgb", modes: ["rgb"] }, "light.lampe_bureau": { b: 200, mode: "brightness", modes: ["brightness"] } };
+  // heure du dernier changement d'état des modes
+  const changed = { "input_boolean.absence": new Date(Date.now() - 3 * 3600e3).toISOString(), "input_boolean.mode_nuit": new Date(Date.now() - 26 * 3600e3).toISOString() };
   let fanPct = 40, volet = 60, garageDoor = "open", portailOpen = false;
   // relais à impulsion : allumé une seconde, puis le portail change d'état
   const pulse = (id) => { on[id] = true; setTimeout(() => { on[id] = false; if (id === "switch.portail") portailOpen = !portailOpen; if (card) card.hass = hass(); }, 1000); };
@@ -196,6 +198,10 @@
     add("switch.adguard_home_protection", "on", { friendly_name: "AdGuard Home Protection" }, { device_id: "adguard", platform: "adguard" });
     add("switch.zigbee2mqtt_bridge_permit_join", "off", { friendly_name: "Zigbee2MQTT Bridge Permit join" }, { device_id: "z2m", platform: "mqtt", entity_category: "config" });
     add("switch.mode_vacances", "off", { friendly_name: "Mode vacances" }, { platform: "template" });
+    for (const [id, name] of [["input_boolean.absence", "Absence"], ["input_boolean.mode_nuit", "Mode nuit"]]) {
+      add(id, sw(id), { friendly_name: name }, {});
+      states[id].last_changed = changed[id];
+    }
     add("scene.soiree", "2026-11-24", { friendly_name: "Soirée", icon: "mdi:sofa" }, {});
     add("scene.cinema", "2026-11-24", { friendly_name: "Cinéma", icon: "mdi:movie-open" }, {});
     return {
@@ -211,6 +217,7 @@
           } else if (domain === "scene") say(`Scène ${id} lancée`);
           else {
             if (id === "switch.portail" || id === "switch.portillon") { pulse(id); continue; }
+            if (id in changed) changed[id] = new Date().toISOString();
             if (service === "set_percentage") { fanPct = data.percentage; on[id] = data.percentage > 0; }
             else on[id] = service === "turn_on" ? true : service === "turn_off" ? false : !on[id];
             if (light[id]) { if (data.brightness_pct) light[id].b = Math.round(data.brightness_pct * 2.55);
@@ -235,6 +242,7 @@
     c.locked = ["switch.congelateur"];
     c.show_scenes = true;
     if (state.rooms) c.rooms = state.rooms;
+    c.modes = state.modes || ["input_boolean.absence", { entity: "input_boolean.mode_nuit", confirm: true }];
     c.contacts = state.contacts || { "switch.portail": "binary_sensor.capteur_portail", "switch.portillon": "binary_sensor.capteur_portillon" };
     return c;
   }
@@ -277,6 +285,7 @@
       editor.addEventListener("config-changed", (ev) => {
         state.rooms = ev.detail.config.rooms;
         state.contacts = ev.detail.config.contacts || {};
+        state.modes = ev.detail.config.modes || [];
         try { localStorage.setItem("commandes-card-demo", JSON.stringify(state)); } catch (e) { /* ignoré */ }
         render();
       });

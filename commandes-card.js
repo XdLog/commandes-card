@@ -9,7 +9,7 @@
  * Le style, les gestes et une partie du code viennent de ces deux cartes.
  */
 (() => {
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.4.0";
 
 const DEFAULTS = {
   title: "",
@@ -20,6 +20,7 @@ const DEFAULTS = {
   areas: [],
   rooms: [],
   contacts: {},
+  modes: [],
   exclude: [],
   locked: [],
   groups: "auto",
@@ -47,6 +48,8 @@ const I18N = {
     n_on: { one: "{n} appareil allumé", other: "{n} appareils allumés" }, none_on: "Tout est éteint",
     n_open: { one: "{n} ouverture ouverte", other: "{n} ouvertures ouvertes" }, d_open: "Ouvert", d_closed: "Fermé", d_unknown: "État inconnu",
     act_open: "Ouvrir", act_close: "Fermer", act_any: "Actionner", confirm_open: "Ouvrir ?", confirm_close: "Fermer ?", confirm_act: "Actionner ?",
+    since: "depuis {t}", days: "{n} j", confirm_mode: "Confirmer ?", m_home: "À la maison", m_away: "Absent", m_on: "Activé", m_off: "Désactivé",
+    m_vac_on: "En vacances", m_vac_off: "À la maison", m_night_on: "Nuit", m_night_off: "Jour",
     other_room: "Sans pièce", confirm_off: "Éteindre ?", confirm_on: "Allumer ?", locked: "Verrouillé : pas de commande depuis la carte",
     total: "Puissance totale", today: "aujourd'hui", collapse: "Replier ou déplier la pièce", history: "Historique",
     all_off: "Tout éteindre", lights_off: "Lumières", off_t: "Éteindre tout ce qui est allumé ici (sauf les appareils verrouillés)", confirm_all: "Éteindre {n} ?",
@@ -61,6 +64,8 @@ const I18N = {
     n_on: { one: "{n} device on", other: "{n} devices on" }, none_on: "Everything is off",
     n_open: { one: "{n} opening open", other: "{n} openings open" }, d_open: "Open", d_closed: "Closed", d_unknown: "Unknown state",
     act_open: "Open", act_close: "Close", act_any: "Operate", confirm_open: "Open?", confirm_close: "Close?", confirm_act: "Operate?",
+    since: "since {t}", days: "{n} d", confirm_mode: "Confirm?", m_home: "Home", m_away: "Away", m_on: "On", m_off: "Off",
+    m_vac_on: "On holiday", m_vac_off: "Home", m_night_on: "Night", m_night_off: "Day",
     other_room: "No room", confirm_off: "Turn off?", confirm_on: "Turn on?", locked: "Locked: no control from the card",
     total: "Total power", today: "today", collapse: "Collapse or expand the room", history: "History",
     all_off: "Turn all off", lights_off: "Lights", off_t: "Turn off everything that is on here (except locked devices)", confirm_all: "Turn off {n}?",
@@ -182,6 +187,27 @@ const shortName = (name, area) => {
 const NO_AREA = "_none";
 const entityOf = (x) => (typeof x === "string" ? x : x?.entity);
 /** rooms : [{ area, show, entities }] ; une chaîne seule vaut { area }. */
+/** modes : [{ entity, name, on: { label, icon, color }, off: {…}, confirm }] ; une chaîne seule vaut { entity }. */
+const normModes = (v) => (Array.isArray(v) ? v : v ? [v] : [])
+  .map((m) => (typeof m === "string" ? { entity: m } : m && typeof m === "object" ? m : null)).filter(Boolean);
+const MODE_COLORS = { green: "var(--cc-ok)", orange: "var(--cc-warn)", red: "var(--cc-bad)", blue: "var(--med-accent)", yellow: "var(--cc-yel)",
+  purple: "#a970ff", grey: "var(--med-muted)" };
+/**
+ * Libellés, icônes et couleurs d'un mode : ceux réglés, sinon déduits du nom
+ * (absence, présence, vacances, nuit…), sinon Activé / Désactivé.
+ */
+const modeLook = (hass, m, T) => {
+  const st = hass.states[m.entity];
+  const n = norm(`${objectId(m.entity || "")} ${st?.attributes?.friendly_name || ""} ${m.name || ""}`);
+  let on, off;
+  if (/absen|away|parti|depart/.test(n)) { on = { label: T.m_away, icon: "mdi:home-export-outline", color: "orange" }; off = { label: T.m_home, icon: "mdi:home-account", color: "green" }; }
+  else if (/vacance|holiday|vacation/.test(n)) { on = { label: T.m_vac_on, icon: "mdi:palm-tree", color: "orange" }; off = { label: T.m_vac_off, icon: "mdi:home-account", color: "green" }; }
+  else if (/presen|maison|home|occup/.test(n)) { on = { label: T.m_home, icon: "mdi:home-account", color: "green" }; off = { label: T.m_away, icon: "mdi:home-export-outline", color: "orange" }; }
+  else if (/nuit|night|sommeil|sleep/.test(n)) { on = { label: T.m_night_on, icon: "mdi:weather-night", color: "purple" }; off = { label: T.m_night_off, icon: "mdi:weather-sunny", color: "yellow" }; }
+  else { on = { label: T.m_on, icon: "mdi:toggle-switch", color: "blue" }; off = { label: T.m_off, icon: "mdi:toggle-switch-off-outline", color: "grey" }; }
+  const pick = (base, set) => ({ ...base, ...Object.fromEntries(Object.entries(set || {}).filter(([, v]) => v !== undefined && v !== "")) });
+  return { name: m.name || st?.attributes?.friendly_name || m.entity, on: pick(on, m.on), off: pick(off, m.off) };
+};
 const normRooms = (v) => (Array.isArray(v) ? v : v ? [v] : [])
   .map((r) => (typeof r === "string" ? { area: r } : r && typeof r === "object" && r.area ? r : null)).filter(Boolean);
 const store = {
@@ -255,6 +281,7 @@ class CommandesCard extends HTMLElement {
     if (this._config.confirm === true) this._config.confirm = "always";
     if (this._config.confirm === false) this._config.confirm = "never";
     this._config.rooms = normRooms(this._config.rooms);
+    this._config.modes = normModes(this._config.modes).filter((m) => m.entity);
     this._sig = null;
     this._cache = null;
     if (!this.shadowRoot) this._init();
@@ -303,6 +330,7 @@ class CommandesCard extends HTMLElement {
       else if (act === "run") { this._run(id); el.classList.add("cc-done"); setTimeout(() => el.classList.remove("cc-done"), 900); }
       else if (act === "cover") this._call("cover", el.dataset.svc, { entity_id: id });
       else if (act === "alloff") this._allOff(el.dataset.key, JSON.parse(el.dataset.ids));
+      else if (act === "mode") this._setMode(id, el.dataset.to);
       else if (act === "rgb") this._call("light", "turn_on", { entity_id: id, rgb_color: JSON.parse(el.dataset.rgb) });
       else if (act === "info") this._moreInfo(id);
       else if (act === "open") { this._open.has(id) ? this._open.delete(id) : this._open.add(id); this._sig = null; this._render(); }
@@ -379,6 +407,17 @@ class CommandesCard extends HTMLElement {
     if (this._config.confirm !== "never" && this._armed !== `off:${key}`) { this._arm(`off:${key}`); return; }
     this._disarm();
     this._call("homeassistant", "turn_off", { entity_id: ids });
+  }
+
+  /** Mode (présence, absence…) : bascule vers l'état choisi, avec un second appui si le mode le demande. */
+  _setMode(id, to) {
+    const m = this._config.modes.find((x) => x.entity === id);
+    const st = this._hass.states[id]?.state;
+    if (!m || st === to || (st !== "on" && st !== "off")) return;
+    if (m.confirm && this._armed !== `mode:${id}`) { this._arm(`mode:${id}`); return; }
+    this._disarm();
+    const dom = id.split(".")[0];
+    this._call(dom === "input_boolean" || dom === "switch" ? dom : "homeassistant", to === "on" ? "turn_on" : "turn_off", { entity_id: id });
   }
 
   _arm(key) {
@@ -611,6 +650,9 @@ class CommandesCard extends HTMLElement {
       }
       items = this._dedupeGroups(items);
     }
+    // un mode s'affiche dans son bandeau, pas dans une pièce
+    const modeIds = new Set(c.modes.map((m) => m.entity));
+    items = items.filter((it) => !modeIds.has(it.id));
     // pièces réglées dans l'éditeur : exactement les appareils cochés, dans l'ordre choisi
     const custom = c.rooms.filter((r) => Array.isArray(r.entities));
     if (custom.length) {
@@ -621,7 +663,7 @@ class CommandesCard extends HTMLElement {
       for (const r of custom) {
         for (const x of r.entities) {
           const id = entityOf(x);
-          if (!id || !hass.states[id] || done.has(id)) continue;
+          if (!id || !hass.states[id] || done.has(id) || modeIds.has(id)) continue;
           done.add(id);
           const it = this._make(id, typeof x === "string" ? {} : x, this._kind(id, true, controls), sensors);
           it.room = r.area;
@@ -804,10 +846,10 @@ class CommandesCard extends HTMLElement {
     const filter = c.show_filter && present.size > 1 && (this._filter === "all" || present.has(this._filter)) ? this._filter : "all";
     const scenes = this._scenes();
 
-    const watch = inRooms.flatMap((it) => [it.id, it.power, it.energy, it.voltage, it.current, it.contact?.sensor]).filter(Boolean);
+    const watch = [...inRooms.flatMap((it) => [it.id, it.power, it.energy, it.voltage, it.current, it.contact?.sensor]), ...c.modes.map((m) => m.entity)].filter(Boolean);
     const sig = JSON.stringify([c, this._lang, this._hass.themes?.darkMode, this._armed, filter, [...this._open], [...this._collapsed],
       watch.map((id) => { const s = this._hass.states[id]; const a = s?.attributes || {};
-        return [id, s?.state, a.brightness, a.rgb_color, a.color_temp_kelvin, a.color_mode, a.percentage, a.current_position]; }),
+        return [id, s?.state, s?.last_changed, a.brightness, a.rgb_color, a.color_temp_kelvin, a.color_mode, a.percentage, a.current_position]; }),
       scenes.map((id) => [id, this._hass.states[id]?.attributes?.friendly_name])]);
     if (sig === this._sig) return;
     this._sig = sig;
@@ -845,8 +887,45 @@ class CommandesCard extends HTMLElement {
       const filled = shownRooms.filter((r) => c.show_off || r.items.some((it) => this._isOn(it)));
       body = filled.length === 1 ? this._room(filled[0], true) : shownRooms.map((r) => this._room(r)).join("");
     }
-    this.shadowRoot.innerHTML = `${STYLE}<ha-card class="${this._themeClass()}">${head}${chips}${sc}<div class="cc-rooms">${body}</div></ha-card>`;
+    this.shadowRoot.innerHTML = `${STYLE}<ha-card class="${this._themeClass()}">${head}${this._modesHtml()}${chips}${sc}<div class="cc-rooms">${body}</div></ha-card>`;
     for (const r of this.shadowRoot.querySelectorAll("input[type=range]")) r.style.setProperty("--p", `${this._pct(r)}%`);
+  }
+
+  /** « depuis 14:32 », « depuis hier 18:05 », « depuis 3 j ». */
+  _since(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return "";
+    const d = new Date(t), now = new Date();
+    const hm = d.toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit" });
+    const days = Math.floor((new Date(now.toDateString()) - new Date(d.toDateString())) / 864e5);
+    const when = days <= 0 ? hm : days === 1 ? `${d.toLocaleDateString(this._lang, { weekday: "short" })} ${hm}` : this._fmt("days", { n: days });
+    return this._fmt("since", { t: when });
+  }
+
+  /** Bandeau des modes : nom, état en clair, durée, et sélecteur à deux segments. */
+  _modesHtml() {
+    const T = this._t(), hass = this._hass;
+    const modes = this._config.modes.filter((m) => hass.states[m.entity]);
+    if (!modes.length) return "";
+    return `<div class="cc-modes">${modes.map((m) => {
+      const st = hass.states[m.entity], look = modeLook(hass, m, T);
+      const known = st.state === "on" || st.state === "off";
+      const cur = known ? look[st.state] : null;
+      const armed = this._armed === `mode:${m.entity}`;
+      const color = cur ? MODE_COLORS[cur.color] || cur.color : "var(--cc-yel)";
+      const seg = (to) => {
+        const l = look[to], sel = st.state === to;
+        return `<button role="radio" aria-checked="${sel}" class="${sel ? "sel" : ""}${armed && !sel ? " armed" : ""}" data-act="mode" data-id="${esc(m.entity)}" data-to="${to}"
+          style="--sc:${MODE_COLORS[l.color] || l.color}" ${known ? "" : "disabled"}><ha-icon icon="${esc(l.icon)}"></ha-icon>${esc(armed && !sel ? T.confirm_mode : l.label)}</button>`;
+      };
+      return `<div class="cc-mode${known ? "" : " na"}" style="--mc:${color}">
+        <div class="cc-mode-h" data-act="info" data-id="${esc(m.entity)}" role="button" tabindex="0" title="${esc(T.history)}">
+          <span class="cc-mode-i"><ha-icon icon="${esc(cur?.icon || "mdi:help-circle-outline")}"></ha-icon></span>
+          <span class="cc-mode-t"><small>${esc(look.name)}</small><b>${esc(cur ? cur.label : T.unavailable)}</b>${known ? `<small>${esc(this._since(st.last_changed))}</small>` : ""}</span>
+        </div>
+        <div class="cc-seg" role="radiogroup" aria-label="${esc(look.name)}">${seg("off")}${seg("on")}</div>
+      </div>`;
+    }).join("")}</div>`;
   }
 
   _room(r, solo = false) {
@@ -985,7 +1064,7 @@ class CommandesCard extends HTMLElement {
     if (it.locked) ctrl = `<span class="cc-lock" title="${esc(T.locked)}"><ha-icon icon="mdi:lock"></ha-icon></span>`;
     else if (armed) ctrl = `<button class="cc-confirm" data-act="toggle" data-id="${esc(it.id)}">${esc(this._confirmText(v))}</button>`;
     // ouverture commandée par un relais, un bouton ou un script : un bouton « Ouvrir » / « Fermer » plutôt qu'un interrupteur
-    else if (v.door && v.dom !== "cover") ctrl = `<button class="cc-doorb" data-act="toggle" data-id="${esc(it.id)}" ${v.canToggle ? "" : "disabled"}>${esc(T[`act_${v.doorAct}`])}</button>`;
+    else if (v.door && v.dom !== "cover") ctrl = `<button class="cc-doorb" data-act="toggle" data-id="${esc(it.id)}" ${v.canToggle ? "" : "disabled"}>${esc(v.doorAct === "act" ? T.act_any : T[`act_${v.doorAct}`])}</button>`;
     else if (v.dom === "cover") ctrl = `<span class="cc-cover">${[["up", "open_cover", "mdi:arrow-up"], ["stop", "stop_cover", "mdi:stop"], ["down", "close_cover", "mdi:arrow-down"]].map(([k, svc, ic]) =>
       `<button data-act="cover" data-svc="${svc}" data-id="${esc(it.id)}" aria-label="${esc(T[k])}" ${v.na ? "disabled" : ""}><ha-icon icon="${ic}"></ha-icon></button>`).join("")}</span>`;
     else if (RUN.has(v.dom)) ctrl = `<button class="cc-runb" data-act="run" data-id="${esc(it.id)}" ${v.na ? "disabled" : ""}><ha-icon icon="mdi:play"></ha-icon>${esc(T.run)}</button>`;
@@ -1048,13 +1127,19 @@ const ED_TEXT = {
     auto: "automatique", custom: "personnalisée", hidden: "masquée", show_room: "Afficher la pièce", up: "Monter", down: "Descendre", empty: "Aucune commande dans cette pièce.",
     kinds: { light: "Lumière", plug: "Prise", switch: "Interrupteur", fan: "Ventilateur", cover: "Volet", other: "Autre" }, general: "Réglages généraux",
     link: "Capteur d'ouverture", c_auto: "Automatique", c_none: "Aucun", c_open: "Capteurs d'ouverture", c_other: "Autres capteurs",
-    invert: "Inversé (ouvert quand le capteur est à « off »)", c_hint: "Rouge ouvert, vert fermé, jaune si le capteur ne répond pas." },
+    invert: "Inversé (ouvert quand le capteur est à « off »)", c_hint: "Rouge ouvert, vert fermé, jaune si le capteur ne répond pas.",
+    modes: "Modes de la maison", m_hint: "Présence, absence, vacances… : un bandeau sous l'en-tête, avec un sélecteur à deux positions. Libellés vides : déduits du nom.",
+    m_add: "Ajouter un mode", m_entity: "Entité", m_name: "Nom affiché", m_off: "À l'arrêt (off)", m_on: "En marche (on)", m_label: "Libellé", m_color: "Couleur",
+    m_confirm: "Second appui pour valider", m_del: "Retirer", colors: { "": "Automatique", green: "Vert", orange: "Orange", red: "Rouge", blue: "Bleu", yellow: "Jaune", purple: "Violet", grey: "Gris" } },
   en: { rooms: "Rooms and devices", hint: "Tick what is shown, ▲ ▼ for the order. A room you don't touch follows automatic discovery.",
     all: "Also list settings, scripts, buttons and hidden entities", reset_all: "Back to automatic everywhere", reset: "Back to automatic",
     auto: "automatic", custom: "custom", hidden: "hidden", show_room: "Show the room", up: "Up", down: "Down", empty: "No controls in this room.",
     kinds: { light: "Light", plug: "Plug", switch: "Switch", fan: "Fan", cover: "Cover", other: "Other" }, general: "General settings",
     link: "Opening sensor", c_auto: "Automatic", c_none: "None", c_open: "Opening sensors", c_other: "Other sensors",
-    invert: "Inverted (open when the sensor is off)", c_hint: "Red open, green closed, yellow if the sensor does not answer." },
+    invert: "Inverted (open when the sensor is off)", c_hint: "Red open, green closed, yellow if the sensor does not answer.",
+    modes: "House modes", m_hint: "Presence, away, holiday…: a strip under the header, with a two-position selector. Empty labels: guessed from the name.",
+    m_add: "Add a mode", m_entity: "Entity", m_name: "Displayed name", m_off: "When off", m_on: "When on", m_label: "Label", m_color: "Colour",
+    m_confirm: "Confirm with a second tap", m_del: "Remove", colors: { "": "Automatic", green: "Green", orange: "Orange", red: "Red", blue: "Blue", yellow: "Yellow", purple: "Purple", grey: "Grey" } },
 };
 const EDIT_DOMAINS = new Set(["light", "switch", "fan", "cover", "input_boolean"]);
 const EDIT_DOMAINS_ALL = new Set([...EDIT_DOMAINS, "script", "button", "scene", "input_button"]);
@@ -1124,8 +1209,9 @@ class CommandesCardEditor extends HTMLElement {
     const domains = this._all ? EDIT_DOMAINS_ALL : EDIT_DOMAINS;
     const cand = new Map();
     const add = (key, id) => { if (!cand.has(key)) cand.set(key, []); if (!cand.get(key).includes(id)) cand.get(key).push(id); };
+    const modeIds = new Set(normModes(cfg.modes).map((m) => m.entity));
     for (const id of Object.keys(hass.states)) {
-      if (!domains.has(id.split(".")[0])) continue;
+      if (!domains.has(id.split(".")[0]) || modeIds.has(id)) continue;
       const e = hass.entities?.[id];
       if (!this._all && e && (e.hidden || e.entity_category)) continue;
       add(placed.get(id) ?? (probe._areaOf(id) || NO_AREA), id);
@@ -1180,6 +1266,8 @@ class CommandesCardEditor extends HTMLElement {
     const { ed, room, id } = b.dataset;
     const m = this._model, ri = m?.findIndex((r) => r.key === room);
     if (ed === "open") { this._open.has(room) ? this._open.delete(room) : this._open.add(room); this._renderRooms(); return; }
+    if (ed === "m-add") { this._editMode(-1, "add"); return; }
+    if (ed === "m-del" || ed === "m-up" || ed === "m-down") { this._editMode(Number(b.dataset.i), ed.slice(2)); return; }
     if (ed === "link") { this._link = this._link === id ? null : id; this._renderRooms(); return; }
     if (ed === "reset-all") { const cfg = { ...this._config }; delete cfg.rooms; this._model = null; this._commit(cfg); return; }
     if (ri < 0 || !m) return;
@@ -1194,6 +1282,68 @@ class CommandesCardEditor extends HTMLElement {
       r.custom = true;
     } else return;
     this._write();
+  }
+
+  /** Modifie la liste des modes (ajout, retrait, ordre, champs). */
+  _editMode(i, field, value) {
+    const modes = normModes(this._config.modes).map((m) => ({ ...m, on: { ...(m.on || {}) }, off: { ...(m.off || {}) } }));
+    if (field === "add") {
+      const used = new Set(modes.map((m) => m.entity));
+      const first = Object.keys(this._hass.states).find((x) => x.startsWith("input_boolean.") && !used.has(x)) || "";
+      modes.push({ entity: first, on: {}, off: {} });
+    } else if (field === "del") modes.splice(i, 1);
+    else if (field === "up" && i > 0) [modes[i - 1], modes[i]] = [modes[i], modes[i - 1]];
+    else if (field === "down" && i < modes.length - 1) [modes[i + 1], modes[i]] = [modes[i], modes[i + 1]];
+    else if (modes[i]) {
+      const m = modes[i];
+      if (field === "entity") m.entity = value;
+      else if (field === "name") m.name = value || undefined;
+      else if (field === "confirm") m.confirm = value || undefined;
+      else { const [side, key] = field.split("-"); m[side][key] = value || undefined; }
+    }
+    // pas de clés vides dans le YAML
+    const clean = modes.map((m) => {
+      const o = { entity: m.entity };
+      if (m.name) o.name = m.name;
+      for (const side of ["off", "on"]) {
+        const v = Object.fromEntries(Object.entries(m[side] || {}).filter(([, x]) => x));
+        if (Object.keys(v).length) o[side] = v;
+      }
+      if (m.confirm) o.confirm = true;
+      return o;
+    });
+    const cfg = { ...this._config, modes: clean };
+    if (!clean.length) delete cfg.modes;
+    this._model = null;
+    this._commit(cfg);
+  }
+
+  _modesHtml() {
+    const tx = this._tx(), hass = this._hass;
+    const T = I18N[uiLang()] || I18N.fr;
+    const modes = normModes(this._config.modes);
+    const ents = Object.keys(hass.states).filter((x) => x.startsWith("input_boolean.") || x.startsWith("switch.")).sort();
+    const name = (x) => hass.states[x]?.attributes?.friendly_name || x;
+    const colorSel = (i, side, cur) => `<select data-ed="m-${side}-color" data-i="${i}">${Object.entries(tx.colors).map(([k, l]) =>
+      `<option value="${k}" ${k === (cur || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    return `<div class="head"><b>${esc(tx.modes)}</b><button class="link" data-ed="m-add">+ ${esc(tx.m_add)}</button></div>
+      <p class="hint">${esc(tx.m_hint)}</p>
+      ${modes.map((m, i) => {
+        const look = modeLook(hass, { entity: m.entity }, T);
+        const side = (k) => `<fieldset><legend>${esc(tx[`m_${k}`])}</legend>
+          <input type="text" data-ed="m-${k}-label" data-i="${i}" value="${esc(m[k]?.label || "")}" placeholder="${esc(look[k].label)}" aria-label="${esc(tx.m_label)}">
+          ${colorSel(i, k, m[k]?.color)}</fieldset>`;
+        return `<div class="mode-ed">
+          <div class="rh"><select data-ed="m-entity" data-i="${i}" aria-label="${esc(tx.m_entity)}">${(ents.includes(m.entity) || !m.entity ? ents : [m.entity, ...ents]).map((x) =>
+            `<option value="${esc(x)}" ${x === m.entity ? "selected" : ""}>${esc(name(x))} (${esc(x)})</option>`).join("")}</select>
+            <button class="arr" data-ed="m-up" data-i="${i}" ${i ? "" : "disabled"} aria-label="${esc(tx.up)}"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+            <button class="arr" data-ed="m-down" data-i="${i}" ${i < modes.length - 1 ? "" : "disabled"} aria-label="${esc(tx.down)}"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+            <button class="arr" data-ed="m-del" data-i="${i}" aria-label="${esc(tx.m_del)}" title="${esc(tx.m_del)}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>
+          <input type="text" data-ed="m-name" data-i="${i}" value="${esc(m.name || "")}" placeholder="${esc(look.name)}" aria-label="${esc(tx.m_name)}">
+          <div class="sides">${side("off")}${side("on")}</div>
+          <label class="all"><input type="checkbox" data-ed="m-confirm" data-i="${i}" ${m.confirm ? "checked" : ""}>${esc(tx.m_confirm)}</label>
+        </div>`;
+      }).join("")}`;
   }
 
   /** Écrit contacts : capteur choisi (et inversion), false pour aucun, rien pour l'automatique. */
@@ -1231,6 +1381,7 @@ class CommandesCardEditor extends HTMLElement {
     const el = ev.target;
     if (el.dataset?.ed === "all") { this._all = el.checked; this._model = null; this._renderRooms(); return; }
     if (el.dataset?.ed === "contact" || el.dataset?.ed === "invert") { this._setContact(el.dataset.id); return; }
+    if (el.dataset?.ed?.startsWith("m-")) { this._editMode(Number(el.dataset.i), el.dataset.ed.slice(2), el.type === "checkbox" ? el.checked : el.value); return; }
     const r = this._model?.find((x) => x.key === el.dataset?.room);
     if (!r) return;
     if (el.dataset.ed === "room-show") r.visible = el.checked;
@@ -1282,7 +1433,7 @@ class CommandesCardEditor extends HTMLElement {
     const tx = this._tx();
     this._model ||= this._buildModel();
     const anyCustom = normRooms(this._config.rooms).length > 0;
-    host.innerHTML = `<div class="head"><b>${esc(tx.rooms)}</b>${anyCustom ? `<button class="link" data-ed="reset-all">${esc(tx.reset_all)}</button>` : ""}</div>
+    host.innerHTML = `${this._modesHtml()}<div class="head sep"><b>${esc(tx.rooms)}</b>${anyCustom ? `<button class="link" data-ed="reset-all">${esc(tx.reset_all)}</button>` : ""}</div>
       <p class="hint">${esc(tx.hint)}</p>
       <label class="all"><input type="checkbox" data-ed="all" ${this._all ? "checked" : ""}>${esc(tx.all)}</label>
       ${this._model.map((r, i) => {
@@ -1350,6 +1501,15 @@ li > ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color, #9b9b9b
 li.off .nm { opacity: .55; }
 .nm { flex: 1; }
 .link { color: var(--primary-color, #03a9f4); font-size: 13px; padding: 2px 10px 10px; }
+.head.sep { margin-top: 14px; }
+.mode-ed { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; }
+.mode-ed .rh { padding: 0; }
+.mode-ed .rh select { flex: 1; min-width: 0; }
+.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+fieldset { margin: 0; padding: 6px 8px 8px; border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+legend { font-size: 12px; color: var(--secondary-text-color, #9b9b9b); padding: 0 4px; }
+input[type=text] { font: inherit; font-size: 13.5px; padding: 6px 8px; border-radius: 6px; color: var(--primary-text-color, #e1e1e1); min-width: 0;
+  background: var(--card-background-color, #1c1c1c); border: 1px solid var(--divider-color, rgba(127,127,127,.4)); }
 .arr.lk ha-icon { color: var(--primary-color, #03a9f4); }
 li.link-ed { padding: 2px 0 8px 28px; }
 li.link-ed > div { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px 10px; border-radius: 8px;
@@ -1403,6 +1563,24 @@ button:focus-visible, [role=button]:focus-visible, [role=switch]:focus-visible, 
 .cc-acts.sm .cc-total, .cc-acts.sm .cc-off { padding: 3px 9px; font-size: .74rem; }
 .cc-acts.sm .cc-total b { font-size: .78rem; }
 .cc-acts.sm ha-icon { --mdc-icon-size: 15px; }
+.cc-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px; padding: 0 12px 10px; }
+.cc-mode { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--mc) 50%, var(--med-line)); background: color-mix(in srgb, var(--mc) 10%, var(--med-surface)); }
+.cc-mode-h { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; border-radius: 10px; }
+.cc-mode-i { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--mc) 25%, transparent); }
+.cc-mode-i ha-icon { --mdc-icon-size: 22px; color: var(--mc); }
+.cc-mode-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.cc-mode-t b { font-size: 1rem; color: var(--mc); }
+.cc-mode-t small { font-size: .72rem; color: var(--med-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 999px; background: color-mix(in srgb, var(--med-text) 8%, transparent); flex: none; margin-left: auto; }
+.cc-seg button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 999px; padding: 6px 11px; font-size: .78rem; font-weight: 600;
+  background: none; color: var(--med-muted); white-space: nowrap; transition: background .2s, color .2s; }
+.cc-seg button ha-icon { --mdc-icon-size: 16px; }
+.cc-seg button:not(.sel):not(:disabled):hover { color: var(--med-text); }
+.cc-seg button.sel { background: var(--sc); color: #fff; cursor: default; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+ha-card.light .cc-seg button.sel { color: #fff; }
+.cc-seg button.armed { color: var(--sc); box-shadow: 0 0 0 1px var(--sc) inset; animation: cc-pulse-t 1s ease-in-out infinite; }
+.cc-seg button:disabled { cursor: default; opacity: .5; }
 .cc-filter { display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; scrollbar-width: none; }
 .cc-filter button { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid var(--med-line); background: none;
   padding: 5px 12px; font-size: .8rem; white-space: nowrap; color: var(--med-muted); }

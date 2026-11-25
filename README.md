@@ -12,6 +12,7 @@ Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lu
 - **Prises et appareils qui mesurent** : puissance, énergie (du jour si elle existe), tension, courant, barre du vert au rouge, puissance par pièce et totale. Une lampe sur une prise mesurée affiche aussi sa puissance.
 - **Second appui pour valider** sur les prises et interrupteurs (pas de congélateur coupé par erreur), pas sur les lampes. **Verrouillage** possible.
 - **Ouvertures** (portail, porte de garage, portillon…) : un capteur d'ouverture associé à la commande la colore en **rouge si ouvert, vert si fermé, jaune si le capteur ne répond pas** ; bouton « Ouvrir » / « Fermer » avec second appui.
+- **Modes de la maison** (présence, absence, vacances, nuit…) : un bandeau sous l'en-tête, l'état en clair depuis quand, et un sélecteur à deux positions « À la maison | Absent ».
 - **Ventilateurs** (vitesse) et **volets** (monter, arrêter, descendre, position) ; scripts, boutons et scènes si vous les listez.
 - **Filtre** Tout / Lumières / Prises / Autres en haut de la carte.
 - **Deux affichages** : liste détaillée ou boutons. Éditeur visuel. Aucune dépendance.
@@ -88,6 +89,7 @@ Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une ét
 | `show_details` | Tension et courant | `true` |
 | `show_header` | En-tête ; `false` : une ligne discrète | `true` |
 | `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
+| `modes` | Modes de la maison, dans un bandeau (voir ci-dessous) | aucun |
 | `contacts` | Capteur d'ouverture de chaque commande (voir ci-dessous) | automatique |
 | `off_button` | « Tout éteindre » de la carte et des pièces : `all`, `lights` (lumières seulement) ou `none` | `all` |
 | `max_power` | Puissance du rouge, en W | `2500` |
@@ -157,7 +159,32 @@ contacts:
   cover.volet_salon: false       # pas de capteur, même automatique
 ```
 
+### Modes de la maison
+
+Un `input_boolean` (ou un `switch`) qui décrit l'état de la maison plutôt qu'un appareil, comme un indicateur de présence qui passe à « absent » quand vous partez, mais que vous pouvez aussi basculer vous-même.
+
+- Il s'affiche dans un **bandeau sous l'en-tête**, pas dans une pièce : son nom, son état en clair et en couleur, **depuis quand** (« depuis 14:32 », « depuis mar. 18:05 », « depuis 3 j »), et un **sélecteur à deux positions**. Un appui sur l'autre position bascule ; un appui sur le nom ouvre la fiche et son historique.
+- **Libellés, icônes et couleurs déduits du nom** : absence → « À la maison » (vert) / « Absent » (orange) ; présence → l'inverse ; vacances → « À la maison » / « En vacances » ; nuit → « Jour » / « Nuit » ; sinon « Désactivé » / « Activé ».
+- **Dans l'éditeur**, section *Modes de la maison* : ajouter, retirer, ordonner, nom, libellé et couleur de chaque position, second appui pour valider.
+
+```yaml
+modes:
+  - input_boolean.absence                # tout automatique
+  - entity: input_boolean.mode_vacances
+    name: Vacances
+    confirm: true                        # « Confirmer ? » avant de basculer
+    off: { label: À la maison, icon: mdi:home-account, color: green }
+    on: { label: En vacances, icon: mdi:palm-tree, color: orange }
+```
+
+Couleurs : `green`, `orange`, `red`, `blue`, `yellow`, `purple`, `grey`, ou toute couleur CSS.
+
 ## Historique des versions
+
+### 0.4.0
+
+- ✨ Modes de la maison (`modes`, éditeur) : bandeau avec état en clair, durée et sélecteur à deux positions ; libellés et couleurs déduits du nom ou réglés.
+- 🐛 Ouverture dont le capteur ne répond pas : le bouton « Actionner » était vide.
 
 ### 0.3.0
 

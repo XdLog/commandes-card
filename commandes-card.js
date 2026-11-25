@@ -9,7 +9,7 @@
  * Le style, les gestes et une partie du code viennent de ces deux cartes.
  */
 (() => {
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.2.0";
 
 const DEFAULTS = {
   title: "",
@@ -18,9 +18,11 @@ const DEFAULTS = {
   labels: [],
   domains: ["light", "switch", "fan"],
   areas: [],
+  rooms: [],
   exclude: [],
   locked: [],
   groups: "auto",
+  off_button: "all",
   show_off: true,
   show_details: true,
   show_filter: true,
@@ -44,7 +46,7 @@ const I18N = {
     n_on: { one: "{n} appareil allumé", other: "{n} appareils allumés" }, none_on: "Tout est éteint",
     other_room: "Sans pièce", confirm_off: "Éteindre ?", confirm_on: "Allumer ?", locked: "Verrouillé : pas de commande depuis la carte",
     total: "Puissance totale", today: "aujourd'hui", collapse: "Replier ou déplier la pièce", history: "Historique",
-    lights_off: "Lumières", lights_off_t: "Éteindre toutes les lumières affichées", room_off: "Éteindre", room_off_t: "Éteindre les lumières de la pièce",
+    all_off: "Tout éteindre", lights_off: "Lumières", off_t: "Éteindre tout ce qui est allumé ici (sauf les appareils verrouillés)", confirm_all: "Éteindre {n} ?",
     brightness: "Luminosité", speed: "Vitesse", white: "Blanc", warm: "Chaud", cold: "Froid", color: "Couleur", details: "Plus de réglages", more: "Fiche complète",
     toggle: "Allumer ou éteindre", hold: "Appui : allumer ou éteindre ; appui long : fiche", run: "Lancer", done: "Lancé",
     up: "Ouvrir", stop: "Arrêter", down: "Fermer", shared: "Mesure commune à plusieurs sorties de l'appareil",
@@ -56,7 +58,7 @@ const I18N = {
     n_on: { one: "{n} device on", other: "{n} devices on" }, none_on: "Everything is off",
     other_room: "No room", confirm_off: "Turn off?", confirm_on: "Turn on?", locked: "Locked: no control from the card",
     total: "Total power", today: "today", collapse: "Collapse or expand the room", history: "History",
-    lights_off: "Lights", lights_off_t: "Turn off every light shown", room_off: "Turn off", room_off_t: "Turn off the lights in this room",
+    all_off: "Turn all off", lights_off: "Lights", off_t: "Turn off everything that is on here (except locked devices)", confirm_all: "Turn off {n}?",
     brightness: "Brightness", speed: "Speed", white: "White", warm: "Warm", cold: "Cold", color: "Colour", details: "More settings", more: "Details",
     toggle: "Turn on or off", hold: "Tap: on or off; long press: details", run: "Run", done: "Done",
     up: "Open", stop: "Stop", down: "Close", shared: "Measurement shared by several outputs of the device",
@@ -70,12 +72,12 @@ const EDITOR_LABELS = {
     domains: "Types recherchés automatiquement", areas: "Pièces affichées (toutes si vide)", exclude: "Appareils à masquer", locked: "Appareils verrouillés (pas de commande)",
     groups: "Groupes de lumières", show_off: "Afficher ce qui est éteint", show_details: "Afficher tension et courant", show_filter: "Filtre Lumières / Prises / Autres",
     show_scenes: "Afficher les scènes", scenes: "Scènes affichées", confirm: "Valider d'un second appui", sort: "Ordre dans chaque pièce", layout: "Affichage",
-    show_header: "Afficher l'en-tête (titre et icône)", max_power: "Seuil du rouge (W)", theme: "Couleurs de la carte", language: "Langue" },
+    show_header: "Afficher l'en-tête (titre et icône)", off_button: "Bouton d'extinction", max_power: "Seuil du rouge (W)", theme: "Couleurs de la carte", language: "Langue" },
   en: { title: "Title (Home by default)", icon: "Icon", entities: "Devices, in this order (found automatically if empty)", labels: "Labels: devices carrying one of them",
     domains: "Types found automatically", areas: "Rooms shown (all if empty)", exclude: "Devices to hide", locked: "Locked devices (no control)",
     groups: "Light groups", show_off: "Show what is off", show_details: "Show voltage and current", show_filter: "Lights / Plugs / Other filter",
     show_scenes: "Show scenes", scenes: "Scenes shown", confirm: "Confirm with a second tap", sort: "Order in each room", layout: "Layout",
-    show_header: "Show the header (title and icon)", max_power: "Red threshold (W)", theme: "Card colours", language: "Language" },
+    show_header: "Show the header (title and icon)", off_button: "Turn-off button", max_power: "Red threshold (W)", theme: "Card colours", language: "Language" },
 };
 const EDITOR_HELP = {
   fr: { labels: "Le plus simple pour choisir : posez une étiquette (par exemple « Tableau ») sur les appareils voulus. Avec entities ou labels, la recherche automatique est coupée.",
@@ -169,6 +171,11 @@ const shortName = (name, area) => {
   const s = out.join(" ");
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+const NO_AREA = "_none";
+const entityOf = (x) => (typeof x === "string" ? x : x?.entity);
+/** rooms : [{ area, show, entities }] ; une chaîne seule vaut { area }. */
+const normRooms = (v) => (Array.isArray(v) ? v : v ? [v] : [])
+  .map((r) => (typeof r === "string" ? { area: r } : r && typeof r === "object" && r.area ? r : null)).filter(Boolean);
 const store = {
   get(k, d) { try { const v = JSON.parse(window.localStorage.getItem(k)); return v ?? d; } catch (e) { return d; } },
   set(k, v) { try { window.localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* stockage indisponible */ } },
@@ -186,8 +193,13 @@ class CommandesCard extends HTMLElement {
     return {};
   }
 
-  /** Éditeur visuel : formulaire de Home Assistant. */
-  static getConfigForm() {
+  /** Éditeur visuel : réglages généraux (formulaire de Home Assistant) et gestion des pièces. */
+  static getConfigElement() {
+    return document.createElement("commandes-card-editor");
+  }
+
+  /** Réglages généraux de l'éditeur ; les pièces et appareils ont leur propre section. */
+  static formSchema() {
     const sel = (options) => ({ select: { mode: "dropdown", options } });
     return {
       schema: [
@@ -196,12 +208,9 @@ class CommandesCard extends HTMLElement {
           { name: "icon", selector: { icon: {} } },
         ] },
         { name: "labels", selector: { label: { multiple: true } } },
-        { name: "entities", selector: { entity: { multiple: true, filter: { domain: ["light", "switch", "fan", "cover", "input_boolean", "script", "button", "scene"] } } } },
         { name: "domains", selector: { select: { multiple: true, mode: "list", options: [
           { value: "light", label: "Lumières (light)" }, { value: "switch", label: "Prises et interrupteurs (switch)" },
           { value: "fan", label: "Ventilateurs (fan)" }, { value: "cover", label: "Volets et stores (cover)" }] } } },
-        { name: "areas", selector: { area: { multiple: true } } },
-        { name: "exclude", selector: { entity: { multiple: true } } },
         { name: "locked", selector: { entity: { multiple: true } } },
         { type: "grid", name: "", schema: [
           { name: "show_off", selector: { boolean: {} } },
@@ -215,6 +224,7 @@ class CommandesCard extends HTMLElement {
           { name: "confirm", selector: sel([{ value: "auto", label: "Automatique" }, { value: "always", label: "Toujours" }, { value: "never", label: "Jamais" }]) },
           { name: "groups", selector: sel([{ value: "auto", label: "Automatique" }, { value: "show", label: "Groupes et lumières" }, { value: "only", label: "Groupes seulement" }]) },
         ] },
+        { name: "off_button", selector: sel([{ value: "all", label: "Tout éteindre" }, { value: "lights", label: "Lumières seulement" }, { value: "none", label: "Aucun" }]) },
         { name: "max_power", selector: { number: { min: 100, max: 10000, step: 50, mode: "box", unit_of_measurement: "W" } } },
         { name: "show_scenes", selector: { boolean: {} } },
         { name: "scenes", selector: { entity: { multiple: true, filter: { domain: "scene" } } } },
@@ -236,6 +246,7 @@ class CommandesCard extends HTMLElement {
     }
     if (this._config.confirm === true) this._config.confirm = "always";
     if (this._config.confirm === false) this._config.confirm = "never";
+    this._config.rooms = normRooms(this._config.rooms);
     this._sig = null;
     this._cache = null;
     if (!this.shadowRoot) this._init();
@@ -283,7 +294,7 @@ class CommandesCard extends HTMLElement {
       if (act === "toggle") this._toggle(id);
       else if (act === "run") { this._run(id); el.classList.add("cc-done"); setTimeout(() => el.classList.remove("cc-done"), 900); }
       else if (act === "cover") this._call("cover", el.dataset.svc, { entity_id: id });
-      else if (act === "off") this._call("light", "turn_off", { entity_id: JSON.parse(el.dataset.ids) });
+      else if (act === "alloff") this._allOff(el.dataset.key, JSON.parse(el.dataset.ids));
       else if (act === "rgb") this._call("light", "turn_on", { entity_id: id, rgb_color: JSON.parse(el.dataset.rgb) });
       else if (act === "info") this._moreInfo(id);
       else if (act === "open") { this._open.has(id) ? this._open.delete(id) : this._open.add(id); this._sig = null; this._render(); }
@@ -342,13 +353,7 @@ class CommandesCard extends HTMLElement {
     if (dom === "cover") { this._call("cover", "toggle", { entity_id: id }); return; }
     if (RUN.has(dom)) { this._run(id); return; }
     if (st !== "on" && st !== "off") return;
-    if (it.confirm && this._armed !== id) {
-      this._armed = id;
-      clearTimeout(this._armTimer);
-      this._armTimer = setTimeout(() => this._disarm(), 4000);
-      this._sig = null; this._render();
-      return;
-    }
+    if (it.confirm && this._armed !== id) { this._arm(id); return; }
     this._disarm();
     this._call(dom === "input_boolean" ? "input_boolean" : dom, st === "on" ? "turn_off" : "turn_on", { entity_id: id });
   }
@@ -357,6 +362,21 @@ class CommandesCard extends HTMLElement {
     const dom = id.split(".")[0];
     if (dom === "button" || dom === "input_button") this._call(dom, "press", { entity_id: id });
     else this._call(dom, "turn_on", { entity_id: id });
+  }
+
+  /** « Tout éteindre » (carte ou pièce) : toujours un second appui, sauf confirm: never. */
+  _allOff(key, ids) {
+    if (!ids.length) return;
+    if (this._config.confirm !== "never" && this._armed !== `off:${key}`) { this._arm(`off:${key}`); return; }
+    this._disarm();
+    this._call("homeassistant", "turn_off", { entity_id: ids });
+  }
+
+  _arm(key) {
+    this._armed = key;
+    clearTimeout(this._armTimer);
+    this._armTimer = setTimeout(() => this._disarm(), 4000);
+    this._sig = null; this._render();
   }
 
   _disarm() {
@@ -541,6 +561,24 @@ class CommandesCard extends HTMLElement {
       }
       items = this._dedupeGroups(items);
     }
+    // pièces réglées dans l'éditeur : exactement les appareils cochés, dans l'ordre choisi
+    const custom = c.rooms.filter((r) => Array.isArray(r.entities));
+    if (custom.length) {
+      const areas = new Set(custom.map((r) => r.area));
+      const placed = new Set(custom.flatMap((r) => r.entities.map(entityOf)));
+      items = items.filter((it) => !placed.has(it.id) && !areas.has(this._areaOf(it.id) || NO_AREA));
+      const done = new Set();
+      for (const r of custom) {
+        for (const x of r.entities) {
+          const id = entityOf(x);
+          if (!id || !hass.states[id] || done.has(id)) continue;
+          done.add(id);
+          const it = this._make(id, typeof x === "string" ? {} : x, this._kind(id, true, controls), sensors);
+          it.room = r.area;
+          items.push(it);
+        }
+      }
+    }
     // une mesure commune à plusieurs sorties n'est comptée qu'une fois dans les totaux
     const seen = new Map();
     for (const it of items) if (it.power) seen.set(it.power, (seen.get(it.power) || 0) + 1);
@@ -613,19 +651,26 @@ class CommandesCard extends HTMLElement {
     return it.kind === "light" ? "light" : it.kind === "plug" ? "plug" : "other";
   }
 
+  _roomKey(it) {
+    return it.room ?? (this._areaOf(it.id) || NO_AREA);
+  }
+
+  /** Pièces avec leurs appareils : ordre et pièces masquées de l'éditeur (rooms), sinon étages puis noms. */
   _rooms(items) {
     const c = this._config, hass = this._hass;
     const only = new Set(c.areas);
+    const hidden = new Set(c.rooms.filter((r) => r.show === false).map((r) => r.area));
+    const custom = new Set(c.rooms.filter((r) => Array.isArray(r.entities)).map((r) => r.area));
     const groups = new Map();
     for (const it of items) {
-      const area = this._areaOf(it.id) || "";
-      if (only.size && !only.has(area)) continue;
+      const area = this._roomKey(it);
+      if (hidden.has(area) || (only.size && !only.has(area))) continue;
       if (!groups.has(area)) groups.set(area, []);
       groups.get(area).push(it);
     }
     const floors = hass.floors || {};
     const level = (a) => floors[hass.areas?.[a]?.floor_id]?.level ?? 999;
-    const order = only.size ? [...only] : null;
+    const order = c.rooms.length ? c.rooms.map((r) => r.area) : [...only];
     const KIND_ORDER = { light: 0, plug: 1, switch: 2, fan: 3, cover: 4, other: 5 };
     const cmp = (a, b) => {
       if (c.sort === "power") { const d = (this._watts(b) ?? -1) - (this._watts(a) ?? -1); if (d) return d; }
@@ -636,15 +681,39 @@ class CommandesCard extends HTMLElement {
     const rooms = [...groups.entries()].map(([area, list]) => ({
       area,
       name: hass.areas?.[area]?.name || this._t().other_room,
-      icon: hass.areas?.[area]?.icon || (area ? "mdi:door" : "mdi:home-outline"),
-      items: keepOrder ? list : list.sort(cmp),
+      icon: hass.areas?.[area]?.icon || (area !== NO_AREA ? "mdi:door" : "mdi:home-outline"),
+      items: custom.has(area) || keepOrder ? list : list.sort(cmp),
     }));
     rooms.sort((a, b) => {
-      if (!a.area !== !b.area) return a.area ? -1 : 1;
-      if (order) return order.indexOf(a.area) - order.indexOf(b.area);
+      const ia = order.indexOf(a.area), ib = order.indexOf(b.area);
+      if (ia >= 0 || ib >= 0) return (ia < 0 ? 1e6 : ia) - (ib < 0 ? 1e6 : ib);
+      if ((a.area === NO_AREA) !== (b.area === NO_AREA)) return a.area === NO_AREA ? 1 : -1;
       return level(a.area) - level(b.area) || a.name.localeCompare(b.name, this._lang);
     });
     return rooms;
+  }
+
+  /** Ce que « Tout éteindre » coupe : ce qui est allumé, sauf les appareils verrouillés (et les volets). */
+  _offIds(items) {
+    const lightsOnly = this._config.off_button === "lights";
+    return items.filter((it) => {
+      const dom = it.id.split(".")[0];
+      return ON_OFF.has(dom) && !it.locked && this._isOn(it) && (!lightsOnly || dom === "light");
+    }).map((it) => it.id);
+  }
+
+  _offBtn(key, items) {
+    const T = this._t(), c = this._config;
+    const ids = this._offIds(items);
+    if (!ids.length || c.off_button === "none") return "";
+    const armed = this._armed === `off:${key}`;
+    const label = armed ? this._fmt("confirm_all", { n: ids.length }) : c.off_button === "lights" ? T.lights_off : T.all_off;
+    return `<button class="cc-off${armed ? " armed" : ""}" data-act="alloff" data-key="${esc(key)}" data-ids="${esc(JSON.stringify(ids))}" title="${esc(T.off_t)}">
+      <ha-icon icon="${c.off_button === "lights" ? "mdi:lightbulb-group-off-outline" : "mdi:power"}"></ha-icon>${esc(label)}</button>`;
+  }
+
+  _pill(total) {
+    return total !== null ? `<span class="cc-total" title="${esc(this._t().total)}"><ha-icon icon="mdi:flash"></ha-icon><b>${esc(this._w(total))}</b></span>` : "";
   }
 
   _scenes() {
@@ -696,11 +765,9 @@ class CommandesCard extends HTMLElement {
     const shownRooms = rooms.map((r) => ({ ...r, items: filter === "all" ? r.items : r.items.filter((it) => this._group(it) === filter) })).filter((r) => r.items.length);
     const shown = shownRooms.flatMap((r) => r.items);
     const lit = shown.filter((it) => ON_OFF.has(it.id.split(".")[0]) && this._isOn(it));
-    const lights = lit.filter((it) => it.id.startsWith("light.") && !it.locked).map((it) => it.id);
-    const total = this._total(shown);
     const sub = lit.length ? this._fmt("n_on", { n: lit.length }) : T.none_on;
-    const totalPill = total !== null ? `<span class="cc-total" title="${esc(T.total)}"><ha-icon icon="mdi:flash"></ha-icon><b>${esc(this._w(total))}</b></span>` : "";
-    const offBtn = lights.length ? `<button class="cc-off" data-act="off" data-ids="${esc(JSON.stringify(lights))}" title="${esc(T.lights_off_t)}"><ha-icon icon="mdi:lightbulb-group-off-outline"></ha-icon>${esc(T.lights_off)}</button>` : "";
+    const totalPill = this._pill(this._total(shown));
+    const offBtn = this._offBtn("all", shown);
 
     const head = c.show_header === false
       ? `<div class="mini"><span>${esc(sub)}</span><span class="cc-acts">${totalPill}${offBtn}</span></div>`
@@ -740,19 +807,17 @@ class CommandesCard extends HTMLElement {
       ? `<div class="cc-grid${solo ? " cc-solo" : ""}">${list.map((it) => this._tile(it)).join("")}</div>`
       : `<div class="cc-list${solo ? " cc-solo" : ""}">${list.map((it) => this._row(it)).join("")}</div>`;
     if (solo) return inner;
-    const key = r.area || "_other";
+    const key = r.area;
     const closed = this._collapsed.has(key);
-    const total = this._total(r.items);
-    const lights = on.filter((it) => it.id.startsWith("light.") && !it.locked).map((it) => it.id);
+    // même en-tête que la carte : puissance de la pièce et « Tout éteindre » validé d'un second appui
     return `<section class="cc-room${on.length ? " on" : ""}">
       <div class="cc-rh">
         <div class="cc-rt" data-act="room" data-id="${esc(key)}" role="button" tabindex="0" aria-expanded="${!closed}" title="${esc(T.collapse)}">
           <ha-icon icon="${esc(r.icon)}"></ha-icon><b>${esc(r.name)}</b>
           <span class="cc-count">${on.length}/${r.items.length}</span>
-          ${total !== null ? `<span class="cc-rw">${esc(this._w(total))}</span>` : ""}
           <ha-icon class="cc-chev" icon="${closed ? "mdi:chevron-down" : "mdi:chevron-up"}"></ha-icon>
         </div>
-        ${lights.length ? `<button class="cc-roff" data-act="off" data-ids="${esc(JSON.stringify(lights))}" title="${esc(T.room_off_t)}">${esc(T.room_off)}</button>` : ""}
+        <div class="cc-acts sm">${this._pill(this._total(r.items))}${this._offBtn(`room:${key}`, r.items)}</div>
       </div>
       ${closed ? "" : inner}
     </section>`;
@@ -898,6 +963,271 @@ class CommandesCard extends HTMLElement {
   }
 }
 
+/* ------------------------------------------------------------- éditeur */
+
+const ED_TEXT = {
+  fr: { rooms: "Pièces et appareils", hint: "Cochez ce qui s'affiche, ▲ ▼ pour l'ordre. Une pièce que vous ne touchez pas suit la recherche automatique.",
+    all: "Lister aussi les réglages, scripts, boutons et entités masquées", reset_all: "Tout remettre en automatique", reset: "Revenir à l'automatique",
+    auto: "automatique", custom: "personnalisée", hidden: "masquée", show_room: "Afficher la pièce", up: "Monter", down: "Descendre", empty: "Aucune commande dans cette pièce.",
+    kinds: { light: "Lumière", plug: "Prise", switch: "Interrupteur", fan: "Ventilateur", cover: "Volet", other: "Autre" }, general: "Réglages généraux" },
+  en: { rooms: "Rooms and devices", hint: "Tick what is shown, ▲ ▼ for the order. A room you don't touch follows automatic discovery.",
+    all: "Also list settings, scripts, buttons and hidden entities", reset_all: "Back to automatic everywhere", reset: "Back to automatic",
+    auto: "automatic", custom: "custom", hidden: "hidden", show_room: "Show the room", up: "Up", down: "Down", empty: "No controls in this room.",
+    kinds: { light: "Light", plug: "Plug", switch: "Switch", fan: "Fan", cover: "Cover", other: "Other" }, general: "General settings" },
+};
+const EDIT_DOMAINS = new Set(["light", "switch", "fan", "cover", "input_boolean"]);
+const EDIT_DOMAINS_ALL = new Set([...EDIT_DOMAINS, "script", "button", "scene", "input_button"]);
+
+/** Charge ha-form (Home Assistant ne le charge qu'à la demande). */
+const loadHaForm = async () => {
+  if (customElements.get("ha-form")) return;
+  try {
+    const helpers = await window.loadCardHelpers?.();
+    const card = await helpers?.createCardElement({ type: "entities", entities: [] });
+    await card?.constructor?.getConfigElement?.();
+  } catch (e) { /* éditeur sans formulaire général */ }
+};
+
+class CommandesCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._open = new Set();
+    this._all = false;
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+    this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
+  }
+
+  setConfig(config) {
+    this._config = { ...(config || {}) };
+    this._model = null;
+    this._render();
+  }
+
+  set hass(hass) {
+    const first = !this._hass;
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+    if (first) this._render();
+  }
+
+  connectedCallback() {
+    loadHaForm().then(() => { this._formReady = !!customElements.get("ha-form"); this._render(); });
+  }
+
+  _tx() {
+    return ED_TEXT[uiLang()] || ED_TEXT.fr;
+  }
+
+  _commit(cfg) {
+    this._config = cfg;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: cfg }, bubbles: true, composed: true }));
+    this._renderRooms();
+  }
+
+  /** Pièces et commandes, dans l'ordre de la carte, avec ce qui est coché. */
+  _buildModel() {
+    const hass = this._hass, cfg = this._config;
+    const rooms = normRooms(cfg.rooms);
+    const probe = (this._probe ||= document.createElement("commandes-card"));
+    probe.setConfig({ ...cfg, rooms: [], areas: [] });
+    probe._hass = hass;
+    probe._cache = null;
+    probe._t();
+    const auto = probe._rooms(probe._items());
+    const autoMap = new Map(auto.map((r) => [r.area, r.items.map((it) => it.id)]));
+    const autoOrder = auto.map((r) => r.area);
+    const controls = probe._controlsByDevice();
+    const placed = new Map();
+    for (const r of rooms) if (Array.isArray(r.entities)) for (const x of r.entities) if (entityOf(x)) placed.set(entityOf(x), r.area);
+    const domains = this._all ? EDIT_DOMAINS_ALL : EDIT_DOMAINS;
+    const cand = new Map();
+    const add = (key, id) => { if (!cand.has(key)) cand.set(key, []); if (!cand.get(key).includes(id)) cand.get(key).push(id); };
+    for (const id of Object.keys(hass.states)) {
+      if (!domains.has(id.split(".")[0])) continue;
+      const e = hass.entities?.[id];
+      if (!this._all && e && (e.hidden || e.entity_category)) continue;
+      add(placed.get(id) ?? (probe._areaOf(id) || NO_AREA), id);
+    }
+    for (const [key, ids] of autoMap) for (const id of ids) if (!placed.has(id)) add(key, id);
+    for (const [id, key] of placed) if (hass.states[id]) add(key, id);
+    const keys = new Set([...cand.keys(), ...rooms.map((r) => r.area).filter((a) => a === NO_AREA || hass.areas?.[a])]);
+    const floors = hass.floors || {};
+    const level = (a) => floors[hass.areas?.[a]?.floor_id]?.level ?? 999;
+    const listed = rooms.map((r) => r.area);
+    const name = (a) => hass.areas?.[a]?.name || probe._t().other_room;
+    const ordered = [...keys].sort((a, b) => {
+      const ia = listed.indexOf(a), ib = listed.indexOf(b);
+      if (ia >= 0 || ib >= 0) return (ia < 0 ? 1e6 : ia) - (ib < 0 ? 1e6 : ib);
+      const ja = autoOrder.indexOf(a), jb = autoOrder.indexOf(b);
+      if (ja >= 0 && jb >= 0) return ja - jb;
+      if ((a === NO_AREA) !== (b === NO_AREA)) return a === NO_AREA ? 1 : -1;
+      return level(a) - level(b) || name(a).localeCompare(name(b));
+    });
+    const label = (id) => hass.states[id]?.attributes?.friendly_name || id;
+    return ordered.map((key) => {
+      const r = rooms.find((x) => x.area === key);
+      const custom = Array.isArray(r?.entities);
+      const shown = (custom ? r.entities.map(entityOf) : autoMap.get(key) || []).filter((id) => hass.states[id]);
+      const rest = (cand.get(key) || []).filter((id) => !shown.includes(id)).sort((a, b) => label(a).localeCompare(label(b)));
+      return {
+        key, name: name(key), icon: hass.areas?.[key]?.icon || (key === NO_AREA ? "mdi:home-outline" : "mdi:door"),
+        visible: r?.show !== false, custom, originals: new Map((r?.entities || []).map((x) => [entityOf(x), x])),
+        entries: [...shown.map((id) => ({ id, on: true })), ...rest.map((id) => ({ id, on: false }))]
+          .map((e) => ({ ...e, label: label(e.id), kind: probe._kind(e.id, true, controls), icon: hass.entities?.[e.id]?.icon || hass.states[e.id]?.attributes?.icon })),
+      };
+    });
+  }
+
+  /** Écrit rooms : toutes les pièces, dans l'ordre affiché. */
+  _write() {
+    const rooms = this._model.map((r) => {
+      const o = { area: r.key };
+      if (!r.visible) o.show = false;
+      if (r.custom) o.entities = r.entries.filter((e) => e.on).map((e) => r.originals.get(e.id) ?? e.id);
+      return o;
+    });
+    const cfg = { ...this._config, rooms };
+    delete cfg.areas;
+    this._commit(cfg);
+  }
+
+  _onClick(ev) {
+    const b = ev.target.closest?.("[data-ed]");
+    if (!b || b.tagName === "INPUT") return;
+    const { ed, room, id } = b.dataset;
+    const m = this._model, ri = m?.findIndex((r) => r.key === room);
+    if (ed === "open") { this._open.has(room) ? this._open.delete(room) : this._open.add(room); this._renderRooms(); return; }
+    if (ed === "reset-all") { const cfg = { ...this._config }; delete cfg.rooms; this._model = null; this._commit(cfg); return; }
+    if (ri < 0 || !m) return;
+    const r = m[ri];
+    if (ed === "room-up" && ri > 0) [m[ri - 1], m[ri]] = [m[ri], m[ri - 1]];
+    else if (ed === "room-down" && ri < m.length - 1) [m[ri + 1], m[ri]] = [m[ri], m[ri + 1]];
+    else if (ed === "reset") { r.custom = false; this._write(); this._model = null; this._renderRooms(); return; }
+    else if (ed === "up" || ed === "down") {
+      const i = r.entries.findIndex((e) => e.id === id), j = ed === "up" ? i - 1 : i + 1;
+      if (j < 0 || j >= r.entries.length || !r.entries[j].on) return;
+      [r.entries[i], r.entries[j]] = [r.entries[j], r.entries[i]];
+      r.custom = true;
+    } else return;
+    this._write();
+  }
+
+  _onChange(ev) {
+    const el = ev.target;
+    if (el.dataset?.ed === "all") { this._all = el.checked; this._model = null; this._renderRooms(); return; }
+    const r = this._model?.find((x) => x.key === el.dataset?.room);
+    if (!r) return;
+    if (el.dataset.ed === "room-show") r.visible = el.checked;
+    else if (el.dataset.ed === "ent") {
+      const i = r.entries.findIndex((e) => e.id === el.dataset.id);
+      const [e] = r.entries.splice(i, 1);
+      e.on = el.checked;
+      // coché : à la fin des appareils affichés ; décoché : en tête des autres
+      const at = r.entries.filter((x) => x.on).length;
+      r.entries.splice(at, 0, e);
+      r.custom = true;
+    } else return;
+    this._write();
+  }
+
+  _render() {
+    if (!this._config) return;
+    const tx = this._tx();
+    if (!this._root) {
+      this.shadowRoot.innerHTML = `${EDITOR_STYLE}<div class="ed"><div id="form"></div><div id="rooms"></div></div>`;
+      this._root = true;
+    }
+    const slot = this.shadowRoot.getElementById("form");
+    if (this._formReady && this._hass) {
+      if (!this._form) {
+        this._form = document.createElement("ha-form");
+        const f = CommandesCard.formSchema();
+        this._form.schema = f.schema;
+        this._form.computeLabel = f.computeLabel;
+        this._form.computeHelper = f.computeHelper;
+        this._form.addEventListener("value-changed", (ev) => {
+          ev.stopPropagation();
+          const v = { ...ev.detail.value };
+          this._commit({ ...this._config, ...v });
+        });
+        slot.replaceChildren(this._form);
+      }
+      this._form.hass = this._hass;
+      this._form.data = { ...DEFAULTS, ...this._config };
+    } else if (!this._formReady) {
+      slot.innerHTML = `<p class="hint">${esc(tx.general)} : YAML.</p>`;
+    }
+    this._renderRooms();
+  }
+
+  _renderRooms() {
+    const host = this.shadowRoot.getElementById("rooms");
+    if (!host || !this._hass || !this._config) return;
+    const tx = this._tx();
+    this._model ||= this._buildModel();
+    const anyCustom = normRooms(this._config.rooms).length > 0;
+    host.innerHTML = `<div class="head"><b>${esc(tx.rooms)}</b>${anyCustom ? `<button class="link" data-ed="reset-all">${esc(tx.reset_all)}</button>` : ""}</div>
+      <p class="hint">${esc(tx.hint)}</p>
+      <label class="all"><input type="checkbox" data-ed="all" ${this._all ? "checked" : ""}>${esc(tx.all)}</label>
+      ${this._model.map((r, i) => {
+        const open = this._open.has(r.key);
+        const n = r.entries.filter((e) => e.on).length;
+        const state = !r.visible ? tx.hidden : r.custom ? tx.custom : tx.auto;
+        return `<div class="room${r.visible ? "" : " off"}${open ? " open" : ""}">
+          <div class="rh">
+            <input type="checkbox" data-ed="room-show" data-room="${esc(r.key)}" ${r.visible ? "checked" : ""} title="${esc(tx.show_room)}" aria-label="${esc(tx.show_room)} ${esc(r.name)}">
+            <button class="exp" data-ed="open" data-room="${esc(r.key)}" aria-expanded="${open}">
+              <ha-icon icon="${open ? "mdi:chevron-down" : "mdi:chevron-right"}"></ha-icon><ha-icon icon="${esc(r.icon)}"></ha-icon>
+              <span>${esc(r.name)}<small>${n}/${r.entries.length} · ${esc(state)}</small></span></button>
+            <button class="arr" data-ed="room-up" data-room="${esc(r.key)}" ${i ? "" : "disabled"} aria-label="${esc(tx.up)}"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+            <button class="arr" data-ed="room-down" data-room="${esc(r.key)}" ${i < this._model.length - 1 ? "" : "disabled"} aria-label="${esc(tx.down)}"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+          </div>
+          ${open ? `<ul>${r.entries.length ? r.entries.map((e, j) => `<li class="${e.on ? "" : "off"}">
+              <input type="checkbox" data-ed="ent" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${e.on ? "checked" : ""} aria-label="${esc(e.label)}">
+              <ha-icon icon="${esc(e.icon || DEFAULT_ICON[e.kind] || DEFAULT_ICON.other)}"></ha-icon>
+              <span class="nm">${esc(e.label)}<small>${esc(tx.kinds[e.kind] || "")} · ${esc(e.id)}</small></span>
+              ${e.on ? `<button class="arr" data-ed="up" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${j ? "" : "disabled"} aria-label="${esc(tx.up)}"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+              <button class="arr" data-ed="down" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${r.entries[j + 1]?.on ? "" : "disabled"} aria-label="${esc(tx.down)}"><ha-icon icon="mdi:arrow-down"></ha-icon></button>` : ""}
+            </li>`).join("") : `<li class="off">${esc(tx.empty)}</li>`}</ul>
+            ${r.custom ? `<button class="link" data-ed="reset" data-room="${esc(r.key)}">${esc(tx.reset)}</button>` : ""}` : ""}
+        </div>`;
+      }).join("")}`;
+  }
+}
+
+const EDITOR_STYLE = `<style>
+.ed { display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color, #e1e1e1); font-size: 14px; }
+#rooms { display: flex; flex-direction: column; gap: 6px; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 15px; }
+.hint { margin: 0; color: var(--secondary-text-color, #9b9b9b); font-size: 12.5px; }
+.all { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary-text-color, #9b9b9b); margin-bottom: 4px; }
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+button:disabled { opacity: .3; cursor: default; }
+input[type=checkbox] { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--primary-color, #03a9f4); cursor: pointer; }
+.room { border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; overflow: hidden; }
+.room.off .exp { opacity: .5; }
+.rh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.room.open .rh { background: color-mix(in srgb, var(--primary-text-color, #fff) 5%, transparent); }
+.exp { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; text-align: left; padding: 4px 0; }
+.exp ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color, #9b9b9b); flex: none; }
+.exp span, .nm { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.exp span { font-weight: 600; }
+small { font-size: 11.5px; font-weight: 400; color: var(--secondary-text-color, #9b9b9b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arr { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; flex: none; }
+.arr:not(:disabled):hover { background: color-mix(in srgb, var(--primary-color, #03a9f4) 15%, transparent); }
+.arr ha-icon { --mdc-icon-size: 18px; }
+ul { list-style: none; margin: 0; padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+li { display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 2px; min-height: 34px; }
+li > ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color, #9b9b9b); flex: none; }
+li.off .nm { opacity: .55; }
+.nm { flex: 1; }
+.link { color: var(--primary-color, #03a9f4); font-size: 13px; padding: 2px 10px 10px; }
+.head .link { padding: 0; }
+</style>`;
+
+if (!customElements.get("commandes-card-editor")) customElements.define("commandes-card-editor", CommandesCardEditor);
+
 const STYLE = `<style>
 :host {
   --med-bg: #1a2434; --med-surface: #212d40; --med-line: #2f3d55; --med-text: #e7edf5; --med-muted: #8fa0b8;
@@ -930,8 +1260,14 @@ button:focus-visible, [role=button]:focus-visible, [role=switch]:focus-visible, 
 .cc-off, .cc-roff { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid var(--med-line);
   background: var(--med-surface); padding: 6px 12px; font-size: .8rem; font-weight: 600; }
 .cc-off ha-icon { --mdc-icon-size: 17px; color: var(--cc-warm); }
-.cc-off:hover, .cc-roff:hover { border-color: var(--cc-warm); }
-.cc-roff { padding: 3px 10px; font-size: .74rem; font-weight: 500; flex: none; }
+.cc-off:hover { border-color: var(--cc-warm); }
+.cc-off.armed { border-color: var(--cc-bad); color: var(--cc-bad); background: color-mix(in srgb, var(--cc-bad) 15%, var(--med-surface)); animation: cc-pulse-o 1s ease-in-out infinite; }
+.cc-off.armed ha-icon { color: var(--cc-bad); }
+@keyframes cc-pulse-o { 50% { background: color-mix(in srgb, var(--cc-bad) 30%, var(--med-surface)); } }
+.cc-acts.sm { gap: 6px; flex: none; }
+.cc-acts.sm .cc-total, .cc-acts.sm .cc-off { padding: 3px 9px; font-size: .74rem; }
+.cc-acts.sm .cc-total b { font-size: .78rem; }
+.cc-acts.sm ha-icon { --mdc-icon-size: 15px; }
 .cc-filter { display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; scrollbar-width: none; }
 .cc-filter button { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid var(--med-line); background: none;
   padding: 5px 12px; font-size: .8rem; white-space: nowrap; color: var(--med-muted); }
@@ -953,7 +1289,6 @@ button:focus-visible, [role=button]:focus-visible, [role=switch]:focus-visible, 
 .cc-room.on .cc-rt > ha-icon:first-child { color: var(--med-accent); }
 .cc-rt b { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-count { font-size: .74rem; color: var(--med-muted); }
-.cc-rw { margin-left: auto; font-size: .78rem; font-weight: 600; }
 .cc-chev { --mdc-icon-size: 18px; color: var(--med-muted); }
 .cc-count + .cc-chev { margin-left: auto; }
 .cc-list { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 6px; align-items: start; }

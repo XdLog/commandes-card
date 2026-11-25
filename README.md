@@ -6,7 +6,9 @@ Que la lampe soit une ampoule connectée, une lampe branchée sur une prise ou u
 Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lumières](https://github.com/Marlboro62/lumieres-card) de
 [Marlboro62](https://github.com/Marlboro62) (licence MIT), dont elle reprend le style (bleu nuit, clair, thème Home Assistant), les gestes et la mesure de consommation.
 
-- **Lampes** : marche / arrêt d'un appui, luminosité, blanc chaud ↔ froid, couleurs, « Éteindre » par pièce et pour toute la carte.
+- **Lampes** : marche / arrêt d'un appui, luminosité, blanc chaud ↔ froid, couleurs.
+- **Par pièce comme pour toute la carte** : puissance totale et **« Tout éteindre »**, validé d'un second appui (« Éteindre 3 ? »). Les appareils verrouillés ne sont jamais coupés.
+- **Éditeur des pièces** : pour chaque pièce, toutes ses commandes avec une case à cocher et des flèches pour l'ordre ; ordre des pièces et pièces masquées.
 - **Prises et appareils qui mesurent** : puissance, énergie (du jour si elle existe), tension, courant, barre du vert au rouge, puissance par pièce et totale. Une lampe sur une prise mesurée affiche aussi sa puissance.
 - **Second appui pour valider** sur les prises et interrupteurs (pas de congélateur coupé par erreur), pas sur les lampes. **Verrouillage** possible.
 - **Ventilateurs** (vitesse) et **volets** (monter, arrêter, descendre, position) ; scripts, boutons et scènes si vous les listez.
@@ -43,11 +45,12 @@ type: custom:commandes-card
 
 ## Choisir ce qui s'affiche
 
-Trois façons, de la plus simple à la plus fine :
+Quatre façons, de la plus simple à la plus fine :
 
 1. **Rien** : la carte cherche seule (voir ci-dessous).
-2. **Une étiquette** : posez une étiquette (par exemple « Tableau ») sur les appareils ou les entités voulus, puis `labels: [tableau]`. Sur un appareil, seules ses commandes principales sont prises, pas ses réglages.
-3. **Une liste** : `entities`, dans l'ordre voulu, avec des réglages par entité.
+2. **L'éditeur visuel**, section **Pièces et appareils** : chaque pièce, avec une case pour l'afficher ou la masquer et ▲ ▼ pour son rang ; dépliée, toutes ses commandes (lampes, prises, interrupteurs, ventilateurs, volets), cochées si elles s'affichent, avec ▲ ▼ pour leur ordre. Une case en haut liste aussi les réglages, scripts, boutons et entités masquées. Une pièce que vous ne touchez pas garde la recherche automatique ; « Revenir à l'automatique » annule vos choix pour une pièce ou pour toutes.
+3. **Une étiquette** : posez une étiquette (par exemple « Tableau ») sur les appareils ou les entités voulus, puis `labels: [tableau]`. Sur un appareil, seules ses commandes principales sont prises, pas ses réglages.
+4. **Une liste** : `entities`, dans l'ordre voulu, avec des réglages par entité.
 
 Avec `labels` ou `entities`, la recherche automatique est coupée : vous voyez exactement ce que vous avez choisi.
 
@@ -71,7 +74,8 @@ Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une ét
 | `labels` | Étiquettes : appareils et entités qui portent l'une d'elles | aucune |
 | `entities` | Entités affichées, dans cet ordre | trouvées seules |
 | `domains` | Types cherchés automatiquement | `light`, `switch`, `fan` |
-| `areas` | Pièces affichées, dans cet ordre | toutes |
+| `rooms` | Ordre des pièces, pièces masquées et appareils de chaque pièce (écrit par l'éditeur, voir ci-dessous) | automatique |
+| `areas` | Pièces affichées, dans cet ordre (ignoré pour l'ordre si `rooms` est réglé) | toutes |
 | `exclude` | Entités à masquer | aucune |
 | `locked` | Entités sans commande (mesures seulement) | aucune |
 | `groups` | Groupes de lumières : `auto`, `show`, `only` | `auto` |
@@ -83,6 +87,7 @@ Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une ét
 | `show_details` | Tension et courant | `true` |
 | `show_header` | En-tête ; `false` : une ligne discrète | `true` |
 | `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
+| `off_button` | « Tout éteindre » de la carte et des pièces : `all`, `lights` (lumières seulement) ou `none` | `all` |
 | `max_power` | Puissance du rouge, en W | `2500` |
 | `theme` | `v2` (bleu nuit), `auto`, `ha` | `v2` |
 | `language` | `auto`, `fr`, `en` | `auto` |
@@ -104,6 +109,38 @@ entities:
     max_power: 3500
 sort: kind
 ```
+
+### `rooms`
+
+L'éditeur l'écrit pour vous ; à la main :
+
+```yaml
+rooms:
+  - area: salon            # premier
+    entities:              # exactement ceux-ci, dans cet ordre
+      - light.plafonnier_salon
+      - light.lampe_chevet
+      - entity: switch.prise_tv
+        locked: true
+  - area: cuisine          # deuxième, contenu automatique
+  - area: garage
+    show: false            # masquée
+  - area: _none            # appareils sans pièce
+```
+
+Les pièces absentes de la liste suivent, dans l'ordre des étages puis des noms. Une pièce sans `entities` garde la recherche automatique ; avec `entities`, un nouvel appareil n'y apparaît qu'une fois coché.
+
+## Historique des versions
+
+### 0.2.0
+
+- ✨ Éditeur des pièces : commandes de chaque pièce à cocher et à ordonner, ordre des pièces, pièces masquées (option `rooms`).
+- ✨ Puissance totale et « Tout éteindre » dans l'en-tête de chaque pièce, comme dans celui de la carte, avec un second appui pour valider (`off_button`).
+- 🔄 « Tout éteindre » coupe tout ce qui est allumé (sauf les appareils verrouillés), plus seulement les lumières ; `off_button: lights` pour l'ancien comportement.
+
+### 0.1.0
+
+- ✨ Première version.
 
 ## Crédits et licence
 

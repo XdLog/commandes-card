@@ -73,6 +73,7 @@
     </aside>
     <main class="stage">
       <div class="frame" id="frame"></div>
+      <section class="panel"><h2>Éditeur visuel : pièces et appareils</h2><div id="editor"></div></section>
       <section class="panel"><h2>Configuration</h2><pre id="yaml"></pre></section>
     </main>
   </div>
@@ -191,6 +192,7 @@
       callService(domain, service, data) {
         const ids = [].concat(data?.entity_id || []);
         for (const id of ids) {
+          if (domain === "homeassistant") { if (id in on) on[id] = service === "turn_on"; continue; }
           if (domain === "cover") {
             if (id === "cover.porte_garage") garageDoor = service === "open_cover" ? "open" : service === "close_cover" ? "closed" : service === "toggle" ? (garageDoor === "open" ? "closed" : "open") : garageDoor;
             else volet = service === "open_cover" ? 100 : service === "close_cover" ? 0 : service === "set_cover_position" ? data.position : service === "toggle" ? (volet ? 0 : 100) : volet;
@@ -219,9 +221,18 @@
     if (state.groups !== "auto") c.groups = state.groups;
     c.locked = ["switch.congelateur"];
     c.show_scenes = true;
+    if (state.rooms) c.rooms = state.rooms;
     return c;
   }
-  const yaml = (c) => Object.entries(c).map(([k, v]) => Array.isArray(v) ? `${k}:\n${v.map((x) => `  - ${x}`).join("\n")}` : `${k}: ${v}`).join("\n");
+  // YAML lisible, objets et listes imbriqués compris
+  const yamlV = (v, ind) => {
+    const pad = " ".repeat(ind);
+    if (Array.isArray(v)) return v.length ? v.map((x) => typeof x === "object" && x !== null
+      ? `\n${pad}- ${yamlV(x, ind + 2).replace(/^\n\s*/, "")}` : `\n${pad}- ${x}`).join("") : " []";
+    if (typeof v === "object" && v !== null) return Object.entries(v).map(([k, x]) => `\n${pad}${k}:${typeof x === "object" && x !== null ? yamlV(x, ind + 2) : ` ${x}`}`).join("");
+    return ` ${v}`;
+  };
+  const yaml = (c) => yamlV(c, 0).replace(/^\n/, "");
   const WHY = {
     "switch.prise_tv_child_lock": "réglage (sécurité enfant)", "switch.prise_tv_led_indicator": "réglage (voyant)", "switch.prise_lampe": "masqué (devenu lumière)",
     "switch.ds920_home_mode": "intégration NAS", "switch.usw_lite_8_poe_port_3_poe": "intégration réseau", "switch.adguard_home_protection": "service logiciel",
@@ -230,7 +241,7 @@
   };
 
   const frame = document.getElementById("frame"), toast = document.getElementById("toast");
-  let card, toastTimer;
+  let card, editor, toastTimer;
   const say = (text) => { toast.textContent = text; toast.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("on"), 2600); };
 
   function render() {
@@ -247,6 +258,17 @@
     card.setConfig(c);
     const h = hass();
     card.hass = h;
+    if (!editor) {
+      editor = document.createElement("commandes-card-editor");
+      editor.addEventListener("config-changed", (ev) => {
+        state.rooms = ev.detail.config.rooms;
+        try { localStorage.setItem("commandes-card-demo", JSON.stringify(state)); } catch (e) { /* ignoré */ }
+        render();
+      });
+      document.getElementById("editor").replaceChildren(editor);
+    }
+    editor.hass = h;
+    editor.setConfig(c);
     const kept = new Set(card._items().map((it) => it.id));
     document.getElementById("ignored").innerHTML = Object.keys(h.states).filter((id) => /^(light|switch|cover|fan)\./.test(id) && !kept.has(id))
       .map((id) => `<li><code>${id}</code><span>${WHY[id] || ""}</span></li>`).join("");

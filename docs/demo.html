@@ -108,6 +108,7 @@
   const areas = {
     salon: { area_id: "salon", name: "Salon", icon: "mdi:sofa", floor_id: "rdc" }, cuisine: { area_id: "cuisine", name: "Cuisine", icon: "mdi:countertop", floor_id: "rdc" },
     bureau: { area_id: "bureau", name: "Bureau", icon: "mdi:desk", floor_id: "etage" }, garage: { area_id: "garage", name: "Garage", icon: "mdi:garage", floor_id: "ext" },
+    exterieur: { area_id: "exterieur", name: "Extérieur", icon: "mdi:tree", floor_id: "ext" },
   };
   const devices = {
     hue_plaf: { id: "hue_plaf", name: "Plafonnier salon", model: "Hue color", area_id: "salon" },
@@ -125,7 +126,11 @@
     nas: { id: "nas", name: "DS920+", model: "DS920+", area_id: "bureau" },
     usw: { id: "usw", name: "USW Lite 8 PoE", model: "USL8LP", area_id: "bureau" },
     trott: { id: "trott", name: "Chargeur trottinette", model: "Shelly Plug S", area_id: "garage" },
-    garage: { id: "garage", name: "Porte garage", model: "Meross", area_id: "garage" },
+    garage: { id: "garage", name: "Porte garage", model: "Meross MSG100", area_id: "garage" },
+    portail: { id: "portail", name: "Portail", model: "Shelly 1", area_id: "exterieur" },
+    cportail: { id: "cportail", name: "Capteur portail", model: "Aqara MCCGQ11LM", area_id: "exterieur" },
+    portillon: { id: "portillon", name: "Portillon", model: "Shelly 1", area_id: "exterieur" },
+    cportillon: { id: "cportillon", name: "Capteur portillon", model: "Aqara MCCGQ11LM", area_id: "exterieur" },
     adguard: { id: "adguard", name: "AdGuard Home", entry_type: "service" },
     z2m: { id: "z2m", name: "Zigbee2MQTT Bridge", model: "Bridge" },
   };
@@ -134,7 +139,9 @@
     "switch.prise_pc": true, "fan.ventilateur": true, "light.lampe_bureau": false, "switch.chargeur_trottinette": true };
   const light = { "light.plafonnier_salon": { b: 190, rgb: [255, 140, 0], mode: "hs", modes: ["color_temp", "hs"] }, "light.lampadaire": { b: 255, k: 2700, mode: "color_temp", modes: ["color_temp"] },
     "light.ruban_led": { b: 128, rgb: [0, 200, 255], mode: "rgb", modes: ["rgb"] }, "light.lampe_bureau": { b: 200, mode: "brightness", modes: ["brightness"] } };
-  let fanPct = 40, volet = 60, garageDoor = "closed";
+  let fanPct = 40, volet = 60, garageDoor = "open", portailOpen = false;
+  // relais à impulsion : allumé une seconde, puis le portail change d'état
+  const pulse = (id) => { on[id] = true; setTimeout(() => { on[id] = false; if (id === "switch.portail") portailOpen = !portailOpen; if (card) card.hass = hass(); }, 1000); };
   const wob = (b) => b * (0.92 + 0.16 * ((Date.now() / 7000) % 1));
 
   function hass() {
@@ -181,6 +188,11 @@
     add("switch.chargeur_trottinette", sw("switch.chargeur_trottinette"), { friendly_name: "Chargeur trottinette", icon: "mdi:scooter-electric" }, { device_id: "trott", platform: "shelly" });
     sensors("trott", "chargeur_trottinette", on["switch.chargeur_trottinette"] ? wob(240) : 0, 0.42, { today: true });
     add("cover.porte_garage", garageDoor, { friendly_name: "Porte garage", device_class: "garage", supported_features: 3 }, { device_id: "garage" });
+    add("binary_sensor.porte_garage_contact", garageDoor === "open" ? "on" : "off", { friendly_name: "Porte garage contact", device_class: "garage_door" }, { device_id: "garage" });
+    add("switch.portail", sw("switch.portail"), { friendly_name: "Portail" }, { device_id: "portail", platform: "shelly" });
+    add("binary_sensor.capteur_portail", portailOpen ? "on" : "off", { friendly_name: "Capteur portail", device_class: "door" }, { device_id: "cportail" });
+    add("switch.portillon", sw("switch.portillon"), { friendly_name: "Portillon" }, { device_id: "portillon", platform: "shelly" });
+    add("binary_sensor.capteur_portillon", "unavailable", { friendly_name: "Capteur portillon", device_class: "door" }, { device_id: "cportillon" });
     add("switch.adguard_home_protection", "on", { friendly_name: "AdGuard Home Protection" }, { device_id: "adguard", platform: "adguard" });
     add("switch.zigbee2mqtt_bridge_permit_join", "off", { friendly_name: "Zigbee2MQTT Bridge Permit join" }, { device_id: "z2m", platform: "mqtt", entity_category: "config" });
     add("switch.mode_vacances", "off", { friendly_name: "Mode vacances" }, { platform: "template" });
@@ -198,6 +210,7 @@
             else volet = service === "open_cover" ? 100 : service === "close_cover" ? 0 : service === "set_cover_position" ? data.position : service === "toggle" ? (volet ? 0 : 100) : volet;
           } else if (domain === "scene") say(`Scène ${id} lancée`);
           else {
+            if (id === "switch.portail" || id === "switch.portillon") { pulse(id); continue; }
             if (service === "set_percentage") { fanPct = data.percentage; on[id] = data.percentage > 0; }
             else on[id] = service === "turn_on" ? true : service === "turn_off" ? false : !on[id];
             if (light[id]) { if (data.brightness_pct) light[id].b = Math.round(data.brightness_pct * 2.55);
@@ -222,6 +235,7 @@
     c.locked = ["switch.congelateur"];
     c.show_scenes = true;
     if (state.rooms) c.rooms = state.rooms;
+    c.contacts = state.contacts || { "switch.portail": "binary_sensor.capteur_portail", "switch.portillon": "binary_sensor.capteur_portillon" };
     return c;
   }
   // YAML lisible, objets et listes imbriqués compris
@@ -262,6 +276,7 @@
       editor = document.createElement("commandes-card-editor");
       editor.addEventListener("config-changed", (ev) => {
         state.rooms = ev.detail.config.rooms;
+        state.contacts = ev.detail.config.contacts || {};
         try { localStorage.setItem("commandes-card-demo", JSON.stringify(state)); } catch (e) { /* ignoré */ }
         render();
       });

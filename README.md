@@ -11,6 +11,7 @@ Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lu
 - **Éditeur des pièces** : pour chaque pièce, toutes ses commandes avec une case à cocher et des flèches pour l'ordre ; ordre des pièces et pièces masquées.
 - **Prises et appareils qui mesurent** : puissance, énergie (du jour si elle existe), tension, courant, barre du vert au rouge, puissance par pièce et totale. Une lampe sur une prise mesurée affiche aussi sa puissance.
 - **Second appui pour valider** sur les prises et interrupteurs (pas de congélateur coupé par erreur), pas sur les lampes. **Verrouillage** possible.
+- **Ouvertures** (portail, porte de garage, portillon…) : un capteur d'ouverture associé à la commande la colore en **rouge si ouvert, vert si fermé, jaune si le capteur ne répond pas** ; bouton « Ouvrir » / « Fermer » avec second appui.
 - **Ventilateurs** (vitesse) et **volets** (monter, arrêter, descendre, position) ; scripts, boutons et scènes si vous les listez.
 - **Filtre** Tout / Lumières / Prises / Autres en haut de la carte.
 - **Deux affichages** : liste détaillée ou boutons. Éditeur visuel. Aucune dépendance.
@@ -87,12 +88,13 @@ Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une ét
 | `show_details` | Tension et courant | `true` |
 | `show_header` | En-tête ; `false` : une ligne discrète | `true` |
 | `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
+| `contacts` | Capteur d'ouverture de chaque commande (voir ci-dessous) | automatique |
 | `off_button` | « Tout éteindre » de la carte et des pièces : `all`, `lights` (lumières seulement) ou `none` | `all` |
 | `max_power` | Puissance du rouge, en W | `2500` |
 | `theme` | `v2` (bleu nuit), `auto`, `ha` | `v2` |
 | `language` | `auto`, `fr`, `en` | `auto` |
 
-Réglages par entité dans `entities` : `entity`, `name`, `icon`, `kind` (`light`, `plug`, `switch`, `fan`, `cover`, `other`), `power`, `energy`, `voltage`, `current`, `locked`, `confirm`, `max_power`.
+Réglages par entité dans `entities` : `entity`, `name`, `icon`, `kind` (`light`, `plug`, `switch`, `fan`, `cover`, `other`), `power`, `energy`, `voltage`, `current`, `locked`, `confirm`, `max_power`, `contact`, `invert`.
 
 ```yaml
 type: custom:commandes-card
@@ -130,7 +132,37 @@ rooms:
 
 Les pièces absentes de la liste suivent, dans l'ordre des étages puis des noms. Une pièce sans `entities` garde la recherche automatique ; avec `entities`, un nouvel appareil n'y apparaît qu'une fois coché.
 
+### Ouvertures et capteurs d'ouverture
+
+Une commande qui ouvre quelque chose (porte de garage en `cover`, relais à impulsion du portail en `switch`, `button` ou `script`) prend l'état d'un capteur d'ouverture (`binary_sensor` de classe porte, garage, ouverture ou fenêtre) :
+
+| Capteur | Couleur | Texte | Commande |
+| --- | --- | --- | --- |
+| ouvert | rouge | Ouvert | « Fermer » puis « Fermer ? » |
+| fermé | vert | Fermé | « Ouvrir » puis « Ouvrir ? » |
+| indisponible, inconnu | jaune | État inconnu | « Actionner » puis « Actionner ? » |
+
+L'en-tête de la carte compte les ouvertures ouvertes (« 1 ouverture ouverte »).
+
+- **Automatique** : un volet, ou une commande dont le nom évoque une ouverture (portail, porte, garage, portillon…), prend le capteur d'ouverture **de son propre appareil** s'il en a un (porte de garage Meross, Shelly avec entrée de contact…).
+- **Dans l'éditeur** : pièce dépliée, icône 🔗 d'une commande, puis le capteur. Les capteurs du même appareil et de la même pièce viennent en premier ; « Aucun » coupe l'association automatique ; « Inversé » pour un capteur à « off » quand c'est ouvert.
+- **En YAML** :
+
+```yaml
+contacts:
+  switch.portail: binary_sensor.capteur_portail
+  switch.portillon:
+    sensor: binary_sensor.portillon_contact
+    invert: true
+  cover.volet_salon: false       # pas de capteur, même automatique
+```
+
 ## Historique des versions
+
+### 0.3.0
+
+- ✨ Capteurs d'ouverture associés aux commandes (`contacts`, éditeur 🔗) : rouge ouvert, vert fermé, jaune inconnu ; association automatique avec le capteur du même appareil.
+- ✨ Ouvertures : bouton « Ouvrir » / « Fermer » et second appui de confirmation, icône portail, garage ou porte selon l'état, compte des ouvertures ouvertes dans l'en-tête.
 
 ### 0.2.0
 

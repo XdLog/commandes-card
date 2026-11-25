@@ -9,7 +9,7 @@
  * Le style, les gestes et une partie du code viennent de ces deux cartes.
  */
 (() => {
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 const DEFAULTS = {
   title: "",
@@ -19,6 +19,7 @@ const DEFAULTS = {
   domains: ["light", "switch", "fan"],
   areas: [],
   rooms: [],
+  contacts: {},
   exclude: [],
   locked: [],
   groups: "auto",
@@ -44,6 +45,8 @@ const I18N = {
   fr: {
     title: "Maison", off: "Éteint", on: "Allumé", unavailable: "Indisponible", open: "Ouvert", closed: "Fermé", opening: "Ouverture…", closing: "Fermeture…",
     n_on: { one: "{n} appareil allumé", other: "{n} appareils allumés" }, none_on: "Tout est éteint",
+    n_open: { one: "{n} ouverture ouverte", other: "{n} ouvertures ouvertes" }, d_open: "Ouvert", d_closed: "Fermé", d_unknown: "État inconnu",
+    act_open: "Ouvrir", act_close: "Fermer", act_any: "Actionner", confirm_open: "Ouvrir ?", confirm_close: "Fermer ?", confirm_act: "Actionner ?",
     other_room: "Sans pièce", confirm_off: "Éteindre ?", confirm_on: "Allumer ?", locked: "Verrouillé : pas de commande depuis la carte",
     total: "Puissance totale", today: "aujourd'hui", collapse: "Replier ou déplier la pièce", history: "Historique",
     all_off: "Tout éteindre", lights_off: "Lumières", off_t: "Éteindre tout ce qui est allumé ici (sauf les appareils verrouillés)", confirm_all: "Éteindre {n} ?",
@@ -56,6 +59,8 @@ const I18N = {
   en: {
     title: "Home", off: "Off", on: "On", unavailable: "Unavailable", open: "Open", closed: "Closed", opening: "Opening…", closing: "Closing…",
     n_on: { one: "{n} device on", other: "{n} devices on" }, none_on: "Everything is off",
+    n_open: { one: "{n} opening open", other: "{n} openings open" }, d_open: "Open", d_closed: "Closed", d_unknown: "Unknown state",
+    act_open: "Open", act_close: "Close", act_any: "Operate", confirm_open: "Open?", confirm_close: "Close?", confirm_act: "Operate?",
     other_room: "No room", confirm_off: "Turn off?", confirm_on: "Turn on?", locked: "Locked: no control from the card",
     total: "Total power", today: "today", collapse: "Collapse or expand the room", history: "History",
     all_off: "Turn all off", lights_off: "Lights", off_t: "Turn off everything that is on here (except locked devices)", confirm_all: "Turn off {n}?",
@@ -107,6 +112,9 @@ const SETTING = /\b(child ?lock|lock|verrou\w*|securite enfant|led indicator|ind
 const LIGHT_NOISE = /\b(indicator\w*|indicateur\w*|voyant\w*|status|backlight|retro ?eclairage|night ?light indicator|led ring)\b/;
 const LAMP = /\b(lampes?|lamp|lamps|lumieres?|light|lights|eclairage|plafonnier|lampadaire|appliques?|spots?|suspension|guirlandes?|veilleuse|ruban|bandeau|neon|chevet|lustre|projecteur|led strip|ampoule)\b/;
 const PLUG = /\b(prises?|plugs?|smart ?plug|socket|outlet|steckdose|multiprise|power ?strip|gniazd\w*|ts011f|ts0121|p1[01]0m?|hs1\d\d|kp\d{3}|bw ?shp\d*|snpl)\b/;
+// capteurs d'ouverture et commandes qui ouvrent quelque chose
+const OPEN_CLASSES = new Set(["door", "garage_door", "opening", "window"]);
+const OPENING = /\b(portail|portillon|porte|garage|gate|door|barriere|volet|store|fenetre|velux)\b/;
 const TODAY = /today|aujourd|daily|journ|jour|dzis|heute/i;
 const LAMP_ICONS = /^mdi:(lightbulb|lamp|ceiling|floor-lamp|desk-lamp|wall-sconce|led-strip|string-lights|track-light|spotlight|chandelier|outdoor-lamp|coach-lamp|light)/;
 
@@ -350,8 +358,9 @@ class CommandesCard extends HTMLElement {
     const st = this._hass.states[id]?.state;
     if (!it || it.locked) return;
     const dom = id.split(".")[0];
-    if (dom === "cover") { this._call("cover", "toggle", { entity_id: id }); return; }
-    if (RUN.has(dom)) { this._run(id); return; }
+    if ((dom === "cover" || RUN.has(dom)) && it.confirm && this._armed !== id) { this._arm(id); return; }
+    if (dom === "cover") { this._disarm(); this._call("cover", "toggle", { entity_id: id }); return; }
+    if (RUN.has(dom)) { this._disarm(); this._run(id); return; }
     if (st !== "on" && st !== "off") return;
     if (it.confirm && this._armed !== id) { this._arm(id); return; }
     this._disarm();
@@ -504,6 +513,44 @@ class CommandesCard extends HTMLElement {
     return "other";
   }
 
+  /** Capteurs d'ouverture de chaque appareil (porte, garage, ouverture, fenêtre). */
+  _contactsByDevice() {
+    const out = new Map(), hass = this._hass;
+    for (const [id, e] of Object.entries(hass.entities || {})) {
+      if (!id.startsWith("binary_sensor.") || !e.device_id || e.hidden || !hass.states[id]) continue;
+      if (!OPEN_CLASSES.has(hass.states[id].attributes?.device_class)) continue;
+      if (!out.has(e.device_id)) out.set(e.device_id, []);
+      out.get(e.device_id).push(id);
+    }
+    return out;
+  }
+
+  /**
+   * Capteur d'ouverture d'une commande : réglé (contacts ou contact dans entities, false pour aucun),
+   * sinon celui de son propre appareil si la commande ouvre quelque chose (volet, porte, portail, garage).
+   */
+  _contactOf(id, extra = {}) {
+    const set = extra.contact !== undefined ? extra.contact : this._config.contacts?.[id];
+    if (set === false || set === "none" || set === null) return null;
+    if (typeof set === "string") return { sensor: set, invert: !!extra.invert, auto: false };
+    if (set && typeof set === "object" && set.sensor) return { sensor: set.sensor, invert: !!set.invert, auto: false };
+    const hass = this._hass, dom = id.split(".")[0];
+    const a = hass.states[id]?.attributes || {};
+    if (dom !== "cover" && !OPENING.test(norm(`${objectId(id)} ${a.friendly_name || ""}`))) return null;
+    const dev = hass.entities?.[id]?.device_id;
+    const list = dev && (this._contactsNow ||= this._contactsByDevice()).get(dev);
+    if (!list?.length) return null;
+    return { sensor: [...list].sort((x, y) => affinity(id, y) - affinity(id, x))[0], invert: false, auto: true };
+  }
+
+  /** open, closed ou unknown (capteur absent, indisponible ou inconnu). */
+  _doorState(it) {
+    if (!it.contact) return null;
+    const st = this._hass.states[it.contact.sensor]?.state;
+    if (st !== "on" && st !== "off") return "unknown";
+    return (st === "on") !== it.contact.invert ? "open" : "closed";
+  }
+
   /** Un élément de la carte : l'entité, son type, ses mesures. */
   _make(id, extra, kind, sensors) {
     const hass = this._hass;
@@ -512,10 +559,12 @@ class CommandesCard extends HTMLElement {
     const pick = (list) => (list?.length > 1 ? [...list].sort((x, y) => affinity(id, y) - affinity(id, x))[0] : list?.[0]);
     const c = this._config;
     const type = extra.kind || kind;
-    const confirm = extra.confirm ?? (c.confirm === "always" ? true : c.confirm === "never" ? false : type === "plug" || type === "switch");
+    const contact = this._contactOf(id, extra);
+    // une ouverture (portail, garage) demande aussi un second appui en automatique
+    const confirm = extra.confirm ?? (c.confirm === "always" ? true : c.confirm === "never" ? false : type === "plug" || type === "switch" || !!contact);
     const power = extra.power || pick(s.power);
     return {
-      id, kind: type, name: extra.name, icon: extra.icon,
+      id, kind: type, name: extra.name, icon: extra.icon, contact,
       power, energy: extra.energy || pick(s.today) || pick(s.energy), today: !extra.energy && !!pick(s.today),
       voltage: extra.voltage || pick(s.voltage), current: extra.current || pick(s.current),
       max: num(extra.max_power), locked: extra.locked ?? new Set(c.locked).has(id), confirm: !!confirm,
@@ -528,6 +577,7 @@ class CommandesCard extends HTMLElement {
     const c = this._config, hass = this._hass;
     const sensors = this._sensorsByDevice();
     this._sensorsNow = sensors;
+    this._contactsNow = this._contactsByDevice();
     const controls = this._controlsByDevice();
     const exclude = new Set(c.exclude);
     const chosen = new Map();
@@ -754,7 +804,7 @@ class CommandesCard extends HTMLElement {
     const filter = c.show_filter && present.size > 1 && (this._filter === "all" || present.has(this._filter)) ? this._filter : "all";
     const scenes = this._scenes();
 
-    const watch = inRooms.flatMap((it) => [it.id, it.power, it.energy, it.voltage, it.current]).filter(Boolean);
+    const watch = inRooms.flatMap((it) => [it.id, it.power, it.energy, it.voltage, it.current, it.contact?.sensor]).filter(Boolean);
     const sig = JSON.stringify([c, this._lang, this._hass.themes?.darkMode, this._armed, filter, [...this._open], [...this._collapsed],
       watch.map((id) => { const s = this._hass.states[id]; const a = s?.attributes || {};
         return [id, s?.state, a.brightness, a.rgb_color, a.color_temp_kelvin, a.color_mode, a.percentage, a.current_position]; }),
@@ -765,7 +815,8 @@ class CommandesCard extends HTMLElement {
     const shownRooms = rooms.map((r) => ({ ...r, items: filter === "all" ? r.items : r.items.filter((it) => this._group(it) === filter) })).filter((r) => r.items.length);
     const shown = shownRooms.flatMap((r) => r.items);
     const lit = shown.filter((it) => ON_OFF.has(it.id.split(".")[0]) && this._isOn(it));
-    const sub = lit.length ? this._fmt("n_on", { n: lit.length }) : T.none_on;
+    const opened = shown.filter((it) => this._doorState(it) === "open").length;
+    const sub = (lit.length ? this._fmt("n_on", { n: lit.length }) : T.none_on) + (opened ? ` · ${this._fmt("n_open", { n: opened })}` : "");
     const totalPill = this._pill(this._total(shown));
     const offBtn = this._offBtn("all", shown);
 
@@ -857,12 +908,36 @@ class CommandesCard extends HTMLElement {
         : dom === "cover" ? (on ? "mdi:window-shutter-open" : "mdi:window-shutter") : DEFAULT_ICON[it.kind] || DEFAULT_ICON.other);
     const style = [tint ? `--tint:${tint}` : "", metered ? `--h:${heatHue(w, max)}` : ""].filter(Boolean).join(";");
     const canToggle = !it.locked && !na && (ON_OFF.has(dom) || dom === "cover" || RUN.has(dom));
-    return { s, a, dom, on, na, dimmable, temp, color, pct, fanPct, pos, w, kwh, max, metered, tint, state, icon, style, canToggle };
+    // ouverture : l'état vient du capteur ; rouge ouvert, vert fermé, jaune inconnu
+    const door = this._doorState(it);
+    let doorIcon = icon;
+    if (door) {
+      state = door === "open" ? T.d_open : door === "closed" ? T.d_closed : T.d_unknown;
+      if (dom === "cover" && pos !== null && door === "open" && !na) state += ` · ${pos} %`;
+      if (!it.icon && !this._hass.entities?.[it.id]?.icon && !a.icon) {
+        const n = norm(`${objectId(it.id)} ${a.friendly_name || ""} ${a.device_class || ""}`);
+        const fam = /garage/.test(n) ? ["mdi:garage-open-variant", "mdi:garage-variant"] : /portail|portillon|gate|barriere/.test(n) ? ["mdi:gate-open", "mdi:gate"]
+          : /volet|store|shutter|blind/.test(n) ? ["mdi:window-shutter-open", "mdi:window-shutter"] : ["mdi:door-open", "mdi:door-closed"];
+        doorIcon = door === "closed" ? fam[1] : fam[0];
+      }
+    }
+    // libellé de la commande et de sa validation pour une ouverture
+    const doorAct = door === "open" ? "close" : door === "closed" ? "open" : "act";
+    return { s, a, dom, on, na, dimmable, temp, color, pct, fanPct, pos, w, kwh, max, metered, tint, state, icon: doorIcon, style, canToggle, door, doorAct };
   }
 
   _classes(it, v, base) {
     return [base, `k-${it.kind}`, v.on ? "on" : "", v.na ? "na" : "", v.canToggle ? "tap" : "", this._armed === it.id ? "armed" : "",
-      it.locked ? "locked" : "", v.metered ? "heat" : "", v.tint ? "tinted" : ""].filter(Boolean).join(" ");
+      it.locked ? "locked" : "", v.metered ? "heat" : "", v.tint ? "tinted" : "", v.door ? `door door-${v.door}` : ""].filter(Boolean).join(" ");
+  }
+
+  /** Texte du second appui : « Ouvrir ? » / « Fermer ? » pour une ouverture, sinon « Allumer ? » / « Éteindre ? ». */
+  _confirmText(v) {
+    const T = this._t();
+    if (v.door) return T[`confirm_${v.doorAct}`];
+    if (v.dom === "cover") return v.on ? T.confirm_close : T.confirm_open;
+    if (RUN.has(v.dom)) return T.confirm_act;
+    return v.on ? T.confirm_off : T.confirm_on;
   }
 
   /** Affichage « boutons » : appui (et second appui si demandé) pour la commande, appui long pour la fiche. */
@@ -870,7 +945,7 @@ class CommandesCard extends HTMLElement {
     const T = this._t();
     const v = this._view(it);
     const armed = this._armed === it.id;
-    const main = armed ? (v.on ? T.confirm_off : T.confirm_on) : v.state;
+    const main = armed ? this._confirmText(v) : v.state;
     const sub = v.kwh !== null ? `${this._n(v.kwh, v.kwh < 10 ? 2 : 1)} kWh${it.today ? ` ${T.today}` : ""}` : "";
     const hold = it.locked ? it.power : it.id;
     const act = v.canToggle ? ` data-act="toggle" data-id="${esc(it.id)}" role="${v.dom === "cover" || RUN.has(v.dom) ? "button" : "switch"}" aria-checked="${v.on}" tabindex="0" title="${esc(T.hold)}"`
@@ -908,7 +983,9 @@ class CommandesCard extends HTMLElement {
 
     let ctrl;
     if (it.locked) ctrl = `<span class="cc-lock" title="${esc(T.locked)}"><ha-icon icon="mdi:lock"></ha-icon></span>`;
-    else if (armed) ctrl = `<button class="cc-confirm" data-act="toggle" data-id="${esc(it.id)}">${esc(v.on ? T.confirm_off : T.confirm_on)}</button>`;
+    else if (armed) ctrl = `<button class="cc-confirm" data-act="toggle" data-id="${esc(it.id)}">${esc(this._confirmText(v))}</button>`;
+    // ouverture commandée par un relais, un bouton ou un script : un bouton « Ouvrir » / « Fermer » plutôt qu'un interrupteur
+    else if (v.door && v.dom !== "cover") ctrl = `<button class="cc-doorb" data-act="toggle" data-id="${esc(it.id)}" ${v.canToggle ? "" : "disabled"}>${esc(T[`act_${v.doorAct}`])}</button>`;
     else if (v.dom === "cover") ctrl = `<span class="cc-cover">${[["up", "open_cover", "mdi:arrow-up"], ["stop", "stop_cover", "mdi:stop"], ["down", "close_cover", "mdi:arrow-down"]].map(([k, svc, ic]) =>
       `<button data-act="cover" data-svc="${svc}" data-id="${esc(it.id)}" aria-label="${esc(T[k])}" ${v.na ? "disabled" : ""}><ha-icon icon="${ic}"></ha-icon></button>`).join("")}</span>`;
     else if (RUN.has(v.dom)) ctrl = `<button class="cc-runb" data-act="run" data-id="${esc(it.id)}" ${v.na ? "disabled" : ""}><ha-icon icon="mdi:play"></ha-icon>${esc(T.run)}</button>`;
@@ -969,11 +1046,15 @@ const ED_TEXT = {
   fr: { rooms: "Pièces et appareils", hint: "Cochez ce qui s'affiche, ▲ ▼ pour l'ordre. Une pièce que vous ne touchez pas suit la recherche automatique.",
     all: "Lister aussi les réglages, scripts, boutons et entités masquées", reset_all: "Tout remettre en automatique", reset: "Revenir à l'automatique",
     auto: "automatique", custom: "personnalisée", hidden: "masquée", show_room: "Afficher la pièce", up: "Monter", down: "Descendre", empty: "Aucune commande dans cette pièce.",
-    kinds: { light: "Lumière", plug: "Prise", switch: "Interrupteur", fan: "Ventilateur", cover: "Volet", other: "Autre" }, general: "Réglages généraux" },
+    kinds: { light: "Lumière", plug: "Prise", switch: "Interrupteur", fan: "Ventilateur", cover: "Volet", other: "Autre" }, general: "Réglages généraux",
+    link: "Capteur d'ouverture", c_auto: "Automatique", c_none: "Aucun", c_open: "Capteurs d'ouverture", c_other: "Autres capteurs",
+    invert: "Inversé (ouvert quand le capteur est à « off »)", c_hint: "Rouge ouvert, vert fermé, jaune si le capteur ne répond pas." },
   en: { rooms: "Rooms and devices", hint: "Tick what is shown, ▲ ▼ for the order. A room you don't touch follows automatic discovery.",
     all: "Also list settings, scripts, buttons and hidden entities", reset_all: "Back to automatic everywhere", reset: "Back to automatic",
     auto: "automatic", custom: "custom", hidden: "hidden", show_room: "Show the room", up: "Up", down: "Down", empty: "No controls in this room.",
-    kinds: { light: "Light", plug: "Plug", switch: "Switch", fan: "Fan", cover: "Cover", other: "Other" }, general: "General settings" },
+    kinds: { light: "Light", plug: "Plug", switch: "Switch", fan: "Fan", cover: "Cover", other: "Other" }, general: "General settings",
+    link: "Opening sensor", c_auto: "Automatic", c_none: "None", c_open: "Opening sensors", c_other: "Other sensors",
+    invert: "Inverted (open when the sensor is off)", c_hint: "Red open, green closed, yellow if the sensor does not answer." },
 };
 const EDIT_DOMAINS = new Set(["light", "switch", "fan", "cover", "input_boolean"]);
 const EDIT_DOMAINS_ALL = new Set([...EDIT_DOMAINS, "script", "button", "scene", "input_button"]);
@@ -1074,7 +1155,8 @@ class CommandesCardEditor extends HTMLElement {
         key, name: name(key), icon: hass.areas?.[key]?.icon || (key === NO_AREA ? "mdi:home-outline" : "mdi:door"),
         visible: r?.show !== false, custom, originals: new Map((r?.entities || []).map((x) => [entityOf(x), x])),
         entries: [...shown.map((id) => ({ id, on: true })), ...rest.map((id) => ({ id, on: false }))]
-          .map((e) => ({ ...e, label: label(e.id), kind: probe._kind(e.id, true, controls), icon: hass.entities?.[e.id]?.icon || hass.states[e.id]?.attributes?.icon })),
+          .map((e) => ({ ...e, label: label(e.id), kind: probe._kind(e.id, true, controls), icon: hass.entities?.[e.id]?.icon || hass.states[e.id]?.attributes?.icon,
+            contact: probe._contactOf(e.id, (r?.entities || []).find((x) => typeof x === "object" && x?.entity === e.id) || {}) })),
       };
     });
   }
@@ -1098,6 +1180,7 @@ class CommandesCardEditor extends HTMLElement {
     const { ed, room, id } = b.dataset;
     const m = this._model, ri = m?.findIndex((r) => r.key === room);
     if (ed === "open") { this._open.has(room) ? this._open.delete(room) : this._open.add(room); this._renderRooms(); return; }
+    if (ed === "link") { this._link = this._link === id ? null : id; this._renderRooms(); return; }
     if (ed === "reset-all") { const cfg = { ...this._config }; delete cfg.rooms; this._model = null; this._commit(cfg); return; }
     if (ri < 0 || !m) return;
     const r = m[ri];
@@ -1113,9 +1196,41 @@ class CommandesCardEditor extends HTMLElement {
     this._write();
   }
 
+  /** Écrit contacts : capteur choisi (et inversion), false pour aucun, rien pour l'automatique. */
+  _setContact(id) {
+    const root = this.shadowRoot;
+    const sel = root.querySelector(`select[data-ed="contact"][data-id="${CSS.escape(id)}"]`);
+    const inv = root.querySelector(`input[data-ed="invert"][data-id="${CSS.escape(id)}"]`);
+    const contacts = { ...(this._config.contacts || {}) };
+    const v = sel?.value;
+    if (!v || v === "__auto") delete contacts[id];
+    else if (v === "__none") contacts[id] = false;
+    else contacts[id] = inv?.checked ? { sensor: v, invert: true } : v;
+    const cfg = { ...this._config, contacts };
+    if (!Object.keys(contacts).length) delete cfg.contacts;
+    this._model = null;
+    this._commit(cfg);
+  }
+
+  /** Liste des capteurs : d'ouverture d'abord (même appareil, même pièce, puis les autres), puis tous les autres. */
+  _contactOptions(id, current) {
+    const hass = this._hass, tx = this._tx();
+    const e = hass.entities?.[id], area = this._probe._areaOf(id);
+    const ids = Object.keys(hass.states).filter((x) => x.startsWith("binary_sensor."));
+    const name = (x) => hass.states[x]?.attributes?.friendly_name || x;
+    const rank = (x) => (hass.entities?.[x]?.device_id && hass.entities[x].device_id === e?.device_id ? 0 : this._probe._areaOf(x) === area ? 1 : 2);
+    const sort = (list) => list.sort((a, b) => rank(a) - rank(b) || name(a).localeCompare(name(b)));
+    const open = sort(ids.filter((x) => OPEN_CLASSES.has(hass.states[x].attributes?.device_class)));
+    const other = sort(ids.filter((x) => !open.includes(x)));
+    const opt = (x) => `<option value="${esc(x)}" ${x === current ? "selected" : ""}>${esc(name(x))}</option>`;
+    return `${open.length ? `<optgroup label="${esc(tx.c_open)}">${open.map(opt).join("")}</optgroup>` : ""}
+      ${other.length ? `<optgroup label="${esc(tx.c_other)}">${other.map(opt).join("")}</optgroup>` : ""}`;
+  }
+
   _onChange(ev) {
     const el = ev.target;
     if (el.dataset?.ed === "all") { this._all = el.checked; this._model = null; this._renderRooms(); return; }
+    if (el.dataset?.ed === "contact" || el.dataset?.ed === "invert") { this._setContact(el.dataset.id); return; }
     const r = this._model?.find((x) => x.key === el.dataset?.room);
     if (!r) return;
     if (el.dataset.ed === "room-show") r.visible = el.checked;
@@ -1186,10 +1301,22 @@ class CommandesCardEditor extends HTMLElement {
           ${open ? `<ul>${r.entries.length ? r.entries.map((e, j) => `<li class="${e.on ? "" : "off"}">
               <input type="checkbox" data-ed="ent" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${e.on ? "checked" : ""} aria-label="${esc(e.label)}">
               <ha-icon icon="${esc(e.icon || DEFAULT_ICON[e.kind] || DEFAULT_ICON.other)}"></ha-icon>
-              <span class="nm">${esc(e.label)}<small>${esc(tx.kinds[e.kind] || "")} · ${esc(e.id)}</small></span>
+              <span class="nm">${esc(e.label)}<small>${esc(tx.kinds[e.kind] || "")} · ${esc(e.id)}${e.contact ? ` · ↔ ${esc(this._hass.states[e.contact.sensor]?.attributes?.friendly_name || e.contact.sensor)}${e.contact.auto ? ` (${esc(tx.c_auto.toLowerCase())})` : ""}` : ""}</small></span>
+              <button class="arr${e.contact ? " lk" : ""}" data-ed="link" data-room="${esc(r.key)}" data-id="${esc(e.id)}" aria-label="${esc(tx.link)}" title="${esc(tx.link)}" aria-expanded="${this._link === e.id}"><ha-icon icon="${e.contact ? "mdi:link-variant" : "mdi:link-variant-plus"}"></ha-icon></button>
               ${e.on ? `<button class="arr" data-ed="up" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${j ? "" : "disabled"} aria-label="${esc(tx.up)}"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
               <button class="arr" data-ed="down" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${r.entries[j + 1]?.on ? "" : "disabled"} aria-label="${esc(tx.down)}"><ha-icon icon="mdi:arrow-down"></ha-icon></button>` : ""}
-            </li>`).join("") : `<li class="off">${esc(tx.empty)}</li>`}</ul>
+            </li>${this._link === e.id ? (() => {
+              const set = this._config.contacts?.[e.id];
+              const cur = set === false ? "__none" : typeof set === "string" ? set : set?.sensor || "__auto";
+              const inv = typeof set === "object" && set?.invert;
+              return `<li class="link-ed"><div>
+                <label>${esc(tx.link)}<select data-ed="contact" data-id="${esc(e.id)}">
+                  <option value="__auto" ${cur === "__auto" ? "selected" : ""}>${esc(tx.c_auto)}${e.contact?.auto ? ` : ${esc(this._hass.states[e.contact.sensor]?.attributes?.friendly_name || e.contact.sensor)}` : ""}</option>
+                  <option value="__none" ${cur === "__none" ? "selected" : ""}>${esc(tx.c_none)}</option>
+                  ${this._contactOptions(e.id, cur)}</select></label>
+                ${cur !== "__auto" && cur !== "__none" ? `<label class="inv"><input type="checkbox" data-ed="invert" data-id="${esc(e.id)}" ${inv ? "checked" : ""}>${esc(tx.invert)}</label>` : ""}
+                <small>${esc(tx.c_hint)}</small></div></li>`;
+            })() : ""}`).join("") : `<li class="off">${esc(tx.empty)}</li>`}</ul>
             ${r.custom ? `<button class="link" data-ed="reset" data-room="${esc(r.key)}">${esc(tx.reset)}</button>` : ""}` : ""}
         </div>`;
       }).join("")}`;
@@ -1223,6 +1350,14 @@ li > ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color, #9b9b9b
 li.off .nm { opacity: .55; }
 .nm { flex: 1; }
 .link { color: var(--primary-color, #03a9f4); font-size: 13px; padding: 2px 10px 10px; }
+.arr.lk ha-icon { color: var(--primary-color, #03a9f4); }
+li.link-ed { padding: 2px 0 8px 28px; }
+li.link-ed > div { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px 10px; border-radius: 8px;
+  background: color-mix(in srgb, var(--primary-text-color, #fff) 5%, transparent); }
+li.link-ed label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--secondary-text-color, #9b9b9b); }
+li.link-ed label.inv { flex-direction: row; align-items: center; gap: 8px; }
+select { font: inherit; font-size: 13.5px; padding: 6px 8px; border-radius: 6px; color: var(--primary-text-color, #e1e1e1);
+  background: var(--card-background-color, #1c1c1c); border: 1px solid var(--divider-color, rgba(127,127,127,.4)); max-width: 100%; }
 .head .link { padding: 0; }
 </style>`;
 
@@ -1231,16 +1366,16 @@ if (!customElements.get("commandes-card-editor")) customElements.define("command
 const STYLE = `<style>
 :host {
   --med-bg: #1a2434; --med-surface: #212d40; --med-line: #2f3d55; --med-text: #e7edf5; --med-muted: #8fa0b8;
-  --med-accent: #1d93e3; --med-on-accent: #fff; --cc-warm: #f7c948; --cc-ok: #5fcf8a; --cc-warn: #f0a33a; --cc-bad: #ee4a4a;
+  --med-accent: #1d93e3; --med-on-accent: #fff; --cc-warm: #f7c948; --cc-ok: #5fcf8a; --cc-warn: #f0a33a; --cc-bad: #ee4a4a; --cc-yel: #f2cc2e;
 }
 ha-card { display: block; background: var(--med-bg); color: var(--med-text); border: 1px solid var(--med-line); border-radius: 18px;
   overflow: hidden; padding-bottom: 12px; container-type: inline-size; font-variant-numeric: tabular-nums; }
 ha-card.light { --med-bg: #f4f6fa; --med-surface: #e8edf4; --med-line: #d3dbe6; --med-text: #1a2434; --med-muted: #5b6b82; --med-accent: #1673b8;
-  --cc-warm: #b37a00; --cc-ok: #1d8a4b; --cc-warn: #b0640a; --cc-bad: #c62f2f; }
+  --cc-warm: #b37a00; --cc-ok: #1d8a4b; --cc-warn: #b0640a; --cc-bad: #c62f2f; --cc-yel: #a88300; }
 ha-card.th-ha { --med-bg: var(--ha-card-background, var(--card-background-color)); --med-surface: color-mix(in srgb, var(--primary-text-color, #000) 6%, transparent);
   --med-line: var(--divider-color, rgba(127,127,127,.25)); --med-text: var(--primary-text-color); --med-muted: var(--secondary-text-color);
   --med-accent: var(--primary-color, #1d93e3); --med-on-accent: var(--text-primary-color, #fff); border-radius: var(--ha-card-border-radius, 12px); }
-ha-card.th-ha.light { --cc-warm: #b37a00; --cc-ok: #1d8a4b; --cc-warn: #b0640a; --cc-bad: #c62f2f; }
+ha-card.th-ha.light { --cc-warm: #b37a00; --cc-ok: #1d8a4b; --cc-warn: #b0640a; --cc-bad: #c62f2f; --cc-yel: #a88300; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--med-surface); flex: none; }
@@ -1340,6 +1475,16 @@ ha-card.light .cc-item.on .cc-ico ha-icon, ha-card.th-ha.light .cc-item.on .cc-i
 .cc-cover button:disabled { opacity: .4; cursor: default; }
 .cc-tune.open { border-color: var(--ink); }
 .cc-tune.open ha-icon { color: var(--ink); }
+/* ouvertures : rouge ouvert, vert fermé, jaune inconnu */
+.cc-item.door { --door: var(--cc-yel); border-color: color-mix(in srgb, var(--door) 55%, transparent); background: color-mix(in srgb, var(--door) 10%, var(--med-surface)); }
+.cc-item.door-open { --door: var(--cc-bad); }
+.cc-item.door-closed { --door: var(--cc-ok); }
+.cc-item.door .cc-ico, .cc-item.door.on .cc-ico { background: color-mix(in srgb, var(--door) 24%, transparent); }
+.cc-item.door .cc-ico ha-icon, .cc-item.door.on .cc-ico ha-icon, .cc-bt.door > .cc-bt-i, .cc-bt.door.on > .cc-bt-i { color: var(--door); filter: none; }
+.cc-item.door .cc-name em, .cc-item.door.on .cc-name em, .cc-bt.door .cc-bt-v, .cc-bt.door.on .cc-bt-v { color: var(--door); font-weight: 700; }
+.cc-doorb { border-radius: 999px; border: 1px solid var(--door); background: color-mix(in srgb, var(--door) 15%, transparent); color: var(--med-text);
+  padding: 4px 12px; font-size: .78rem; font-weight: 600; flex: none; white-space: nowrap; }
+.cc-doorb:disabled { opacity: .4; cursor: default; }
 .cc-runb { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; border: 1px solid var(--med-line); background: none; padding: 4px 10px; font-size: .76rem; flex: none; }
 .cc-runb ha-icon { --mdc-icon-size: 15px; color: var(--med-accent); }
 .cc-bar { height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--med-text) 12%, transparent); overflow: hidden; margin: 8px 0 2px 48px; }

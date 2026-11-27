@@ -89,6 +89,7 @@ Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une ét
 | `show_details` | Tension et courant | `true` |
 | `show_header` | En-tête ; `false` : une ligne discrète | `true` |
 | `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
+| `tiles` | Nom et icône d'une tuile, sans toucher à Home Assistant (voir ci-dessous) | aucun |
 | `modes` | Modes de la maison, dans un bandeau (voir ci-dessous) | aucun |
 | `contacts` | Capteur d'ouverture de chaque commande (voir ci-dessous) | automatique |
 | `off_button` | « Tout éteindre » de la carte et des pièces : `all`, `lights` (lumières seulement) ou `none` | `all` |
@@ -159,6 +160,19 @@ contacts:
   cover.volet_salon: false       # pas de capteur, même automatique
 ```
 
+### Renommer une tuile, changer son icône
+
+Dans l'éditeur, pièce dépliée, le crayon ✏️ d'une commande ouvre deux champs : **nom sur la carte** et **icône** (avec la recherche d'icônes de Home Assistant). Le champ du nom montre en grisé celui que la carte afficherait sans réglage ; vide, on revient à celui de Home Assistant. Ce réglage ne rend pas la pièce « personnalisée » : elle peut rester en automatique.
+
+```yaml
+tiles:
+  light.plafonnier_salon:
+    name: Lustre
+    icon: mdi:chandelier
+```
+
+Un `name` ou un `icon` posé dans `rooms` (ou `entities`) reste prioritaire ; l'éditeur le reprend dans `tiles` dès qu'on le modifie.
+
 ### Modes de la maison
 
 Un `input_boolean` (ou un `switch`) qui décrit l'état de la maison plutôt qu'un appareil, comme un indicateur de présence qui passe à « absent » quand vous partez, mais que vous pouvez aussi basculer vous-même.
@@ -180,6 +194,10 @@ modes:
 Couleurs : `green`, `orange`, `red`, `blue`, `yellow`, `purple`, `grey`, ou toute couleur CSS.
 
 ## Historique des versions
+
+### 0.5.0
+
+- ✨ Renommer une tuile et changer son icône depuis l'éditeur (crayon ✏️), sans passer par le YAML ni rendre la pièce personnalisée (option `tiles`).
 
 ### 0.4.1
 

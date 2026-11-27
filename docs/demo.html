@@ -242,6 +242,7 @@
     c.locked = ["switch.congelateur"];
     c.show_scenes = true;
     if (state.rooms) c.rooms = state.rooms;
+    if (state.tiles) c.tiles = state.tiles;
     c.modes = state.modes || ["input_boolean.absence", { entity: "input_boolean.mode_nuit", confirm: true }];
     c.contacts = state.contacts || { "switch.portail": "binary_sensor.capteur_portail", "switch.portillon": "binary_sensor.capteur_portillon" };
     return c;
@@ -286,6 +287,7 @@
         state.rooms = ev.detail.config.rooms;
         state.contacts = ev.detail.config.contacts || {};
         state.modes = ev.detail.config.modes || [];
+        state.tiles = ev.detail.config.tiles;
         try { localStorage.setItem("commandes-card-demo", JSON.stringify(state)); } catch (e) { /* ignoré */ }
         render();
       });

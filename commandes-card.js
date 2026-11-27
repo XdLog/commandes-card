@@ -9,7 +9,7 @@
  * Le style, les gestes et une partie du code viennent de ces deux cartes.
  */
 (() => {
-const CARD_VERSION = "0.4.1";
+const CARD_VERSION = "0.5.0";
 
 const DEFAULTS = {
   title: "",
@@ -21,6 +21,7 @@ const DEFAULTS = {
   rooms: [],
   contacts: {},
   modes: [],
+  tiles: {},
   exclude: [],
   locked: [],
   groups: "auto",
@@ -643,7 +644,8 @@ class CommandesCard extends HTMLElement {
     const confirm = extra.confirm ?? (c.confirm === "always" ? true : c.confirm === "never" ? false : type === "plug" || type === "switch" || !!contact);
     const power = extra.power || pick(s.power);
     return {
-      id, kind: type, name: extra.name, icon: extra.icon, contact,
+      // nom et icône : ceux de la pièce (rooms), sinon ceux de tiles, sinon ceux de Home Assistant
+      id, kind: type, name: extra.name || c.tiles?.[id]?.name, icon: extra.icon || c.tiles?.[id]?.icon, contact,
       power, energy: extra.energy || pick(s.today) || pick(s.energy), today: !extra.energy && !!pick(s.today),
       voltage: extra.voltage || pick(s.voltage), current: extra.current || pick(s.current),
       max: num(extra.max_power), locked: extra.locked ?? new Set(c.locked).has(id), confirm: !!confirm,
@@ -1166,6 +1168,8 @@ const ED_TEXT = {
     all: "Lister aussi les réglages, scripts, boutons et entités masquées", reset_all: "Tout remettre en automatique", reset: "Revenir à l'automatique",
     auto: "automatique", custom: "personnalisée", hidden: "masquée", show_room: "Afficher la pièce", up: "Monter", down: "Descendre", empty: "Aucune commande dans cette pièce.",
     kinds: { light: "Lumière", plug: "Prise", switch: "Interrupteur", fan: "Ventilateur", cover: "Volet", other: "Autre" }, general: "Réglages généraux",
+    edit: "Nom et icône", t_name: "Nom sur la carte", t_icon: "Icône", t_reset: "Nom et icône d'origine",
+    t_hint: "Vide : nom de Home Assistant, sans le nom de la pièce ni le type d'appareil.",
     link: "Capteur d'ouverture", c_auto: "Automatique", c_none: "Aucun", c_open: "Capteurs d'ouverture", c_other: "Autres capteurs",
     invert: "Inversé (ouvert quand le capteur est à « off »)", c_hint: "Rouge ouvert, vert fermé, jaune si le capteur ne répond pas.",
     modes: "Modes de la maison", m_hint: "Présence, absence, vacances… : un bandeau sous l'en-tête, avec un sélecteur à deux positions. Libellés vides : déduits du nom.",
@@ -1175,6 +1179,8 @@ const ED_TEXT = {
     all: "Also list settings, scripts, buttons and hidden entities", reset_all: "Back to automatic everywhere", reset: "Back to automatic",
     auto: "automatic", custom: "custom", hidden: "hidden", show_room: "Show the room", up: "Up", down: "Down", empty: "No controls in this room.",
     kinds: { light: "Light", plug: "Plug", switch: "Switch", fan: "Fan", cover: "Cover", other: "Other" }, general: "General settings",
+    edit: "Name and icon", t_name: "Name on the card", t_icon: "Icon", t_reset: "Original name and icon",
+    t_hint: "Empty: Home Assistant name, without the room name or device type.",
     link: "Opening sensor", c_auto: "Automatic", c_none: "None", c_open: "Opening sensors", c_other: "Other sensors",
     invert: "Inverted (open when the sensor is off)", c_hint: "Red open, green closed, yellow if the sensor does not answer.",
     modes: "House modes", m_hint: "Presence, away, holiday…: a strip under the header, with a two-position selector. Empty labels: guessed from the name.",
@@ -1281,8 +1287,12 @@ class CommandesCardEditor extends HTMLElement {
         key, name: name(key), icon: hass.areas?.[key]?.icon || (key === NO_AREA ? "mdi:home-outline" : "mdi:door"),
         visible: r?.show !== false, custom, originals: new Map((r?.entities || []).map((x) => [entityOf(x), x])),
         entries: [...shown.map((id) => ({ id, on: true })), ...rest.map((id) => ({ id, on: false }))]
-          .map((e) => ({ ...e, label: label(e.id), kind: probe._kind(e.id, true, controls), icon: hass.entities?.[e.id]?.icon || hass.states[e.id]?.attributes?.icon,
-            contact: probe._contactOf(e.id, (r?.entities || []).find((x) => typeof x === "object" && x?.entity === e.id) || {}) })),
+          .map((e) => {
+            const obj = (r?.entities || []).find((x) => typeof x === "object" && x?.entity === e.id) || {};
+            const t = cfg.tiles?.[e.id] || {};
+            return { ...e, label: label(e.id), kind: probe._kind(e.id, true, controls), icon: hass.entities?.[e.id]?.icon || hass.states[e.id]?.attributes?.icon,
+              cname: obj.name || t.name || "", cicon: obj.icon || t.icon || "", autoName: probe._name({ id: e.id }), contact: probe._contactOf(e.id, obj) };
+          }),
       };
     });
   }
@@ -1308,7 +1318,9 @@ class CommandesCardEditor extends HTMLElement {
     if (ed === "open") { this._open.has(room) ? this._open.delete(room) : this._open.add(room); this._renderRooms(); return; }
     if (ed === "m-add") { this._editMode(-1, "add"); return; }
     if (ed === "m-del" || ed === "m-up" || ed === "m-down") { this._editMode(Number(b.dataset.i), ed.slice(2)); return; }
-    if (ed === "link") { this._link = this._link === id ? null : id; this._renderRooms(); return; }
+    if (ed === "link") { this._link = this._link === id ? null : id; this._edit = null; this._renderRooms(); return; }
+    if (ed === "edit") { this._edit = this._edit === id ? null : id; this._link = null; this._renderRooms(); return; }
+    if (ed === "t-reset") { this._setTile(id, "name", ""); this._setTile(id, "icon", ""); return; }
     if (ed === "reset-all") { const cfg = { ...this._config }; delete cfg.rooms; this._model = null; this._commit(cfg); return; }
     if (ri < 0 || !m) return;
     const r = m[ri];
@@ -1386,6 +1398,29 @@ class CommandesCardEditor extends HTMLElement {
       }).join("")}`;
   }
 
+  /**
+   * Écrit tiles : nom ou icône d'une tuile ; vide pour revenir à celui de Home Assistant.
+   * Un nom ou une icône posés dans rooms (YAML) sont repris ici, pour n'avoir qu'un seul endroit.
+   */
+  _setTile(id, field, value) {
+    const tiles = { ...(this._config.tiles || {}) };
+    const t = { ...(tiles[id] || {}) };
+    if (value) t[field] = value; else delete t[field];
+    if (Object.keys(t).length) tiles[id] = t; else delete tiles[id];
+    const cfg = { ...this._config, tiles };
+    if (!Object.keys(tiles).length) delete cfg.tiles;
+    if (cfg.rooms) {
+      cfg.rooms = normRooms(cfg.rooms).map((r) => (!Array.isArray(r.entities) ? r : { ...r, entities: r.entities.map((x) => {
+        if (typeof x !== "object" || x?.entity !== id || !(field in x)) return x;
+        const o = { ...x };
+        delete o[field];
+        return Object.keys(o).length === 1 ? o.entity : o;
+      }) }));
+    }
+    this._model = null;
+    this._commit(cfg);
+  }
+
   /** Écrit contacts : capteur choisi (et inversion), false pour aucun, rien pour l'automatique. */
   _setContact(id) {
     const root = this.shadowRoot;
@@ -1421,6 +1456,7 @@ class CommandesCardEditor extends HTMLElement {
     const el = ev.target;
     if (el.dataset?.ed === "all") { this._all = el.checked; this._model = null; this._renderRooms(); return; }
     if (el.dataset?.ed === "contact" || el.dataset?.ed === "invert") { this._setContact(el.dataset.id); return; }
+    if (el.dataset?.ed === "t-name" || el.dataset?.ed === "t-icon") { this._setTile(el.dataset.id, el.dataset.ed.slice(2), el.value.trim()); return; }
     if (el.dataset?.ed?.startsWith("m-")) { this._editMode(Number(el.dataset.i), el.dataset.ed.slice(2), el.type === "checkbox" ? el.checked : el.value); return; }
     const r = this._model?.find((x) => x.key === el.dataset?.room);
     if (!r) return;
@@ -1468,6 +1504,16 @@ class CommandesCardEditor extends HTMLElement {
   }
 
   _renderRooms() {
+    this._renderRoomsHtml();
+    for (const pk of this.shadowRoot.querySelectorAll("ha-icon-picker[data-ed=t-icon]")) {
+      pk.hass = this._hass;
+      pk.value = pk.dataset.value || "";
+      pk.placeholder = pk.dataset.ph || "";
+      pk.addEventListener("value-changed", (ev) => { ev.stopPropagation(); this._setTile(pk.dataset.id, "icon", ev.detail.value || ""); });
+    }
+  }
+
+  _renderRoomsHtml() {
     const host = this.shadowRoot.getElementById("rooms");
     if (!host || !this._hass || !this._config) return;
     const tx = this._tx();
@@ -1491,12 +1537,20 @@ class CommandesCardEditor extends HTMLElement {
           </div>
           ${open ? `<ul>${r.entries.length ? r.entries.map((e, j) => `<li class="${e.on ? "" : "off"}">
               <input type="checkbox" data-ed="ent" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${e.on ? "checked" : ""} aria-label="${esc(e.label)}">
-              <ha-icon icon="${esc(e.icon || DEFAULT_ICON[e.kind] || DEFAULT_ICON.other)}"></ha-icon>
-              <span class="nm">${esc(e.label)}<small>${esc(tx.kinds[e.kind] || "")} · ${esc(e.id)}${e.contact ? ` · ↔ ${esc(this._hass.states[e.contact.sensor]?.attributes?.friendly_name || e.contact.sensor)}${e.contact.auto ? ` (${esc(tx.c_auto.toLowerCase())})` : ""}` : ""}</small></span>
+              <ha-icon icon="${esc(e.cicon || e.icon || DEFAULT_ICON[e.kind] || DEFAULT_ICON.other)}"></ha-icon>
+              <span class="nm">${esc(e.cname || e.label)}<small>${esc(tx.kinds[e.kind] || "")} · ${esc(e.id)}${e.contact ? ` · ↔ ${esc(this._hass.states[e.contact.sensor]?.attributes?.friendly_name || e.contact.sensor)}${e.contact.auto ? ` (${esc(tx.c_auto.toLowerCase())})` : ""}` : ""}</small></span>
+              <button class="arr${e.cname || e.cicon ? " lk" : ""}" data-ed="edit" data-room="${esc(r.key)}" data-id="${esc(e.id)}" aria-label="${esc(tx.edit)}" title="${esc(tx.edit)}" aria-expanded="${this._edit === e.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
               <button class="arr${e.contact ? " lk" : ""}" data-ed="link" data-room="${esc(r.key)}" data-id="${esc(e.id)}" aria-label="${esc(tx.link)}" title="${esc(tx.link)}" aria-expanded="${this._link === e.id}"><ha-icon icon="${e.contact ? "mdi:link-variant" : "mdi:link-variant-plus"}"></ha-icon></button>
               ${e.on ? `<button class="arr" data-ed="up" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${j ? "" : "disabled"} aria-label="${esc(tx.up)}"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
               <button class="arr" data-ed="down" data-room="${esc(r.key)}" data-id="${esc(e.id)}" ${r.entries[j + 1]?.on ? "" : "disabled"} aria-label="${esc(tx.down)}"><ha-icon icon="mdi:arrow-down"></ha-icon></button>` : ""}
-            </li>${this._link === e.id ? (() => {
+            </li>${this._edit === e.id ? `<li class="link-ed"><div>
+                <label>${esc(tx.t_name)}<input type="text" data-ed="t-name" data-id="${esc(e.id)}" value="${esc(e.cname)}" placeholder="${esc(e.autoName)}"></label>
+                <label>${esc(tx.t_icon)}${customElements.get("ha-icon-picker")
+                  ? `<ha-icon-picker data-ed="t-icon" data-id="${esc(e.id)}" data-value="${esc(e.cicon)}" data-ph="${esc(e.icon || DEFAULT_ICON[e.kind] || "")}"></ha-icon-picker>`
+                  : `<span class="icon-in"><ha-icon icon="${esc(e.cicon || e.icon || DEFAULT_ICON[e.kind] || DEFAULT_ICON.other)}"></ha-icon><input type="text" data-ed="t-icon" data-id="${esc(e.id)}" value="${esc(e.cicon)}" placeholder="${esc(e.icon || "mdi:lightbulb")}"></span>`}</label>
+                <small>${esc(tx.t_hint)}</small>
+                ${e.cname || e.cicon ? `<button class="link" data-ed="t-reset" data-id="${esc(e.id)}">${esc(tx.t_reset)}</button>` : ""}
+              </div></li>` : ""}${this._link === e.id ? (() => {
               const set = this._config.contacts?.[e.id];
               const cur = set === false ? "__none" : typeof set === "string" ? set : set?.sensor || "__auto";
               const inv = typeof set === "object" && set?.invert;
@@ -1552,6 +1606,9 @@ input[type=text] { font: inherit; font-size: 13.5px; padding: 6px 8px; border-ra
   background: var(--card-background-color, #1c1c1c); border: 1px solid var(--divider-color, rgba(127,127,127,.4)); }
 .arr.lk ha-icon { color: var(--primary-color, #03a9f4); }
 li.link-ed { padding: 2px 0 8px 28px; }
+.icon-in { display: flex; align-items: center; gap: 8px; }
+.icon-in input { flex: 1; }
+li.link-ed .link { align-self: flex-start; padding: 2px 0; }
 li.link-ed > div { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px 10px; border-radius: 8px;
   background: color-mix(in srgb, var(--primary-text-color, #fff) 5%, transparent); }
 li.link-ed label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--secondary-text-color, #9b9b9b); }

@@ -1,229 +1,223 @@
 # Carte Commandes
 
-**Tout ce qui s'allume dans la maison, rangé par pièce, dans une seule carte Lovelace** : lampes, prises, interrupteurs, ventilateurs, volets.
-Que la lampe soit une ampoule connectée, une lampe branchée sur une prise ou un spot derrière un module Shelly, elle se commande au même endroit.
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![Release](https://img.shields.io/github/v/release/XdLog/commandes-card)](https://github.com/XdLog/commandes-card/releases)
 
-Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lumières](https://github.com/Marlboro62/lumieres-card) de
-[Marlboro62](https://github.com/Marlboro62) (licence MIT), dont elle reprend le style (bleu nuit, clair, thème Home Assistant), les gestes et la mesure de consommation.
+**Tout ce qui se commande dans la maison, rangé par pièce, dans une seule carte Lovelace** : lampes, prises, interrupteurs, ventilateurs, volets, portail et porte de garage, modes de la maison (présence, nuit…).
 
-- **Lampes** : marche / arrêt d'un appui, luminosité, blanc chaud ↔ froid, couleurs.
-- **Par pièce comme pour toute la carte** : puissance totale et **« Tout éteindre »**, validé d'un second appui (« Éteindre 3 ? »). Les appareils verrouillés ne sont jamais coupés.
-- **Éditeur des pièces** : pour chaque pièce, toutes ses commandes avec une case à cocher et des flèches pour l'ordre ; ordre des pièces et pièces masquées.
-- **Prises et appareils qui mesurent** : puissance, énergie (du jour si elle existe), tension, courant, barre du vert au rouge, puissance par pièce et totale. Une lampe sur une prise mesurée affiche aussi sa puissance.
-- **Second appui pour valider** sur les prises et interrupteurs (pas de congélateur coupé par erreur), pas sur les lampes. **Verrouillage** possible.
-- **Ouvertures** (portail, porte de garage, portillon…) : un capteur d'ouverture associé à la commande la colore en **rouge si ouvert, vert si fermé, jaune si le capteur ne répond pas** ; bouton « Ouvrir » / « Fermer » avec second appui.
-- **Modes de la maison** (présence, absence, vacances, nuit…) : un bandeau sous l'en-tête, l'état en clair depuis quand, et un sélecteur à deux positions « À la maison | Absent ».
-- **Ventilateurs** (vitesse) et **volets** (monter, arrêter, descendre, position) ; scripts, boutons et scènes si vous les listez.
-- **Filtre** Tout / Lumières / Prises / Autres en haut de la carte.
-- **Deux affichages** : liste détaillée ou boutons. Éditeur visuel. Aucune dépendance.
+Fusion de [Carte Prises](https://github.com/Marlboro62/prises-card) et [Carte Lumières](https://github.com/Marlboro62/lumieres-card) de [Marlboro62](https://github.com/Marlboro62), dont elle reprend le style et la mesure de consommation.
 
-**[▶ Essayer la démo en ligne](https://xdlog.github.io/commandes-card/docs/demo.html)** : une maison fictive, avec la liste de ce que la détection écarte, et pourquoi.
+| Liste | Boutons | Thème clair |
+| --- | --- | --- |
+| <img src="https://raw.githubusercontent.com/XdLog/commandes-card/main/images/liste.png" alt="Affichage en liste" width="280"> | <img src="https://raw.githubusercontent.com/XdLog/commandes-card/main/images/boutons.png" alt="Affichage en boutons" width="280"> | <img src="https://raw.githubusercontent.com/XdLog/commandes-card/main/images/clair.png" alt="Thème clair de Home Assistant" width="280"> |
+
+**[▶ Essayer la démo en ligne](https://xdlog.github.io/commandes-card/docs/demo.html)** : une maison fictive, avec l'éditeur, sans Home Assistant.
+
+## Sommaire
+
+- [Ce que fait la carte](#ce-que-fait-la-carte)
+- [Installation](#installation)
+- [Régler la carte dans l'éditeur](#régler-la-carte-dans-léditeur)
+- [Gestes](#gestes)
+- [Comment la carte trouve les appareils](#comment-la-carte-trouve-les-appareils)
+- [Référence YAML](#référence-yaml)
+- [Historique des versions](#historique-des-versions)
+
+## Ce que fait la carte
+
+**Commander**
+- Lampes : marche / arrêt, luminosité, blanc chaud ↔ froid, couleurs.
+- Prises et interrupteurs, avec un **second appui pour valider** (pas de congélateur coupé par erreur) ; appareils **verrouillés** sans aucune commande.
+- Ventilateurs (vitesse), volets (monter, arrêter, descendre, position), scripts, boutons et scènes.
+- **« Tout éteindre »** pour la carte et pour chaque pièce, validé d'un second appui ; les appareils verrouillés ne sont jamais coupés.
+- Curseurs à glissement : un appui ou un défilement ne dérègle rien.
+
+**Mesurer**
+- Puissance, énergie (du jour si elle existe), tension et courant des appareils qui les mesurent, barre de charge du vert au rouge.
+- Puissance totale de la carte et de chaque pièce, sans compter deux fois un capteur commun.
+
+**Ouvertures**
+- Un capteur d'ouverture associé à une commande (portail, porte de garage…) la colore : **rouge ouvert, vert fermé, jaune si le capteur ne répond pas**.
+
+**Modes de la maison**
+- Présence, absence, vacances, nuit… dans un bandeau sous l'en-tête : état en clair, depuis quand, sélecteur à deux positions.
+
+**Organiser**
+- Pièces dans l'ordre de votre choix, pièces masquées, appareils cochés et ordonnés dans chaque pièce, tuiles renommées : tout dans l'éditeur visuel.
+- Affichage en liste ou en boutons, filtre Lumières / Prises / Autres, thèmes bleu nuit, clair ou Home Assistant. Aucune dépendance.
 
 ## Installation
 
-### HACS (dépôt personnalisé)
+**Avec HACS** : **HACS › ⋮ › Dépôts personnalisés**, adresse `https://github.com/XdLog/commandes-card`, type **Tableau de bord**. Téléchargez **Carte Commandes**, puis rechargez la page (Ctrl+F5).
 
-**HACS › ⋮ › Dépôts personnalisés**, adresse du dépôt, type **Tableau de bord** (Dashboard). Téléchargez **Carte Commandes**, puis rechargez la page (Ctrl+F5).
+**À la main** : copiez `commandes-card.js` dans `config/www/`, puis **Paramètres › Tableaux de bord › ⋮ › Ressources** : `/local/commandes-card.js`, type **Module JavaScript**.
 
-### À la main
-
-1. Copiez `commandes-card.js` dans `config/www/`.
-2. **Paramètres › Tableaux de bord › ⋮ › Ressources** : `/local/commandes-card.js`, type **Module JavaScript**.
-
-## Utilisation
+Ajoutez ensuite la carte **Commandes** au tableau de bord, ou en YAML :
 
 ```yaml
 type: custom:commandes-card
 ```
 
+Sans autre réglage, la carte trouve seule vos lampes, prises et interrupteurs et les range par pièce.
+
+## Régler la carte dans l'éditeur
+
+<img src="https://raw.githubusercontent.com/XdLog/commandes-card/main/images/editeur.png" alt="Éditeur des pièces et appareils" width="560">
+
+L'éditeur visuel a trois parties : les **réglages généraux** (titre, affichage, thème…), les **modes de la maison** et les **pièces et appareils**.
+
+### Pièces et appareils
+
+- **Pièces** : la case affiche ou masque la pièce ; ▲ ▼ changent son rang.
+- **Appareils** : une pièce dépliée liste toutes ses commandes. Cochées, elles s'affichent ; ▲ ▼ règlent leur ordre. La case « Lister aussi les réglages, scripts, boutons… » montre aussi ce que la carte écarte d'habitude.
+- Une pièce que vous ne touchez pas reste en **automatique** : un nouvel appareil y apparaît tout seul. Une pièce **personnalisée** n'affiche que ce qui est coché. « Revenir à l'automatique » annule vos choix pour une pièce ou pour toutes.
+
+Sur chaque commande :
+
+| Icône | Réglage |
+| --- | --- |
+| ✏️ | **Nom et icône** de la tuile. Vide : nom de Home Assistant, sans le nom de la pièce ni le type d'appareil. La pièce peut rester en automatique. |
+| 🔗 | **Capteur d'ouverture** : celui du même appareil et de la même pièce en premier ; « Aucun » ; « Inversé » pour un capteur à « off » quand c'est ouvert. |
+
+### Ouvertures
+
+| Capteur | Couleur | Texte | Commande |
+| --- | --- | --- | --- |
+| ouvert | rouge | Ouvert | « Fermer », puis « Fermer ? » |
+| fermé | vert | Fermé | « Ouvrir », puis « Ouvrir ? » |
+| indisponible, inconnu | jaune | État inconnu | « Actionner », puis « Actionner ? » |
+
+Sans réglage, un volet, ou une commande dont le nom évoque une ouverture (portail, porte, garage, portillon…), prend le capteur d'ouverture de **son propre appareil** s'il en a un (porte de garage Meross, Shelly avec entrée de contact…). Un capteur posé à part (Aqara sur le portail) s'associe avec 🔗. L'en-tête compte les ouvertures ouvertes.
+
+### Modes de la maison
+
+Pour un `input_boolean` (ou `switch`) qui décrit l'état de la maison plutôt qu'un appareil : un indicateur de présence qui passe à « absent » quand vous partez, et que vous pouvez aussi basculer vous-même.
+
+Le mode s'affiche dans un bandeau sous l'en-tête, hors des pièces : nom, état en clair et en couleur, depuis quand (« depuis 14:32 », « depuis mar. 18:05 », « depuis 3 j »), et un sélecteur à deux positions. Un appui sur l'autre position bascule, avec un second appui si vous le demandez ; un appui sur le nom ouvre l'historique.
+
+Libellés et couleurs déduits du nom, modifiables dans l'éditeur :
+
+| Nom contenant | Position « off » | Position « on » |
+| --- | --- | --- |
+| absence | À la maison (vert) | Absent (orange) |
+| présence | Absent (orange) | À la maison (vert) |
+| vacances | À la maison (vert) | En vacances (orange) |
+| nuit | Jour (jaune) | Nuit (violet) |
+| autre | Désactivé (gris) | Activé (bleu) |
+
+## Gestes
+
 | Geste | Effet |
 | --- | --- |
-| Appui sur l'icône ou l'interrupteur | Allumer ou éteindre (prise, interrupteur : « Allumer ? » / « Éteindre ? », 4 s pour valider) |
+| Appui sur l'icône ou l'interrupteur | Allumer ou éteindre ; prise, interrupteur, ouverture : second appui dans les 4 s pour valider |
 | Appui long | Fiche de Home Assistant |
 | Clic sur le nom | Fiche ; pour une ampoule blanc / couleur : réglages de couleur |
-| Clic sur la puissance | Fiche du capteur, avec son historique |
-| Glisser sur un curseur | Luminosité, blanc, vitesse du ventilateur ou position du volet, à partir de la valeur actuelle (envoyé au relâchement). Un simple appui ou un défilement vertical ne change rien |
+| Clic sur la puissance | Historique du capteur |
+| Glisser sur un curseur | Luminosité, blanc, vitesse, position, à partir de la valeur actuelle ; un appui ou un défilement ne change rien |
+| « Tout éteindre » | « Éteindre 3 ? », puis un second appui |
 | Clic sur une pièce | Replier ou déplier (mémorisé) |
 
-## Choisir ce qui s'affiche
+<img src="https://raw.githubusercontent.com/XdLog/commandes-card/main/images/tablette.png" alt="Deux colonnes sur tablette ou PC" width="560">
 
-Quatre façons, de la plus simple à la plus fine :
+## Comment la carte trouve les appareils
 
-1. **Rien** : la carte cherche seule (voir ci-dessous).
-2. **L'éditeur visuel**, section **Pièces et appareils** : chaque pièce, avec une case pour l'afficher ou la masquer et ▲ ▼ pour son rang ; dépliée, toutes ses commandes (lampes, prises, interrupteurs, ventilateurs, volets), cochées si elles s'affichent, avec ▲ ▼ pour leur ordre. Une case en haut liste aussi les réglages, scripts, boutons et entités masquées. Une pièce que vous ne touchez pas garde la recherche automatique ; « Revenir à l'automatique » annule vos choix pour une pièce ou pour toutes.
-3. **Une étiquette** : posez une étiquette (par exemple « Tableau ») sur les appareils ou les entités voulus, puis `labels: [tableau]`. Sur un appareil, seules ses commandes principales sont prises, pas ses réglages.
-4. **Une liste** : `entities`, dans l'ordre voulu, avec des réglages par entité.
+- **Types cherchés** : `light`, `switch`, `fan` (`domains` pour ajouter `cover`).
+- **Écartés** : entités masquées ou de catégorie configuration / diagnostic ; **réglages exposés en interrupteurs** sans catégorie (sécurité enfant, voyant LED, comportement à la remise sous tension…, fréquent chez Tuya) ; **intégrations qui ne commandent rien dans la maison** (réseau, serveurs, caméras, voitures, multimédia, électroménager et robots) ; appareils logiciels ; appareils à plus de 6 commandes qui ne sont pas des multiprises ; entités sans pièce, sauf les prises déclarées.
+- **Groupes de lumières** : masqués si leurs lumières sont affichées.
+- **Type** de chaque interrupteur : *lumière* si son nom ou son icône l'indique (lampe, plafonnier, spot, guirlande…) ; *prise* s'il se déclare prise, si son nom ou le modèle de l'appareil l'indique (TS011F, Tapo P110, Shelly Plug…), ou s'il est la seule commande d'un appareil qui mesure sa puissance ; *interrupteur* sinon.
+- **Mesures** : capteurs du même appareil. Sur un appareil à plusieurs voies (Shelly 2PM, multiprise), chaque voie prend le capteur qui lui ressemble le plus ; un capteur commun est marqué ⁂ et compté une seule fois.
 
-Avec `labels` ou `entities`, la recherche automatique est coupée : vous voyez exactement ce que vous avez choisi.
+Ce qui est pris à tort ou manque se règle dans l'éditeur (pièce dépliée).
 
-### La recherche automatique
+## Référence YAML
 
-Elle remplace celle de la carte Prises, qui prenait pour une prise tout interrupteur dont l'appareil mesurait une puissance (ports PoE, NAS, onduleurs, robots…) et manquait les prises sans « prise » dans le nom.
-
-- **Types** cherchés : `light`, `switch`, `fan` (`domains` pour ajouter `cover`).
-- **Écartés** : entités masquées ou de catégorie configuration / diagnostic ; **réglages exposés en interrupteurs** sans catégorie (sécurité enfant, voyant LED, comportement à la remise sous tension, protection de surcharge…, fréquent chez Tuya) ; **intégrations qui ne commandent rien dans la maison** (réseau : UniFi, Fritz!Box, Freebox… ; serveurs : Synology, Proxmox, AdGuard, Pi-hole… ; caméras ; voitures ; multimédia ; électroménager et robots) ; **services** (appareils logiciels) ; **appareils à plus de 6 commandes** qui ne sont pas des multiprises ; entités **sans pièce**, sauf les prises déclarées.
-- **Groupes de lumières** : masqués si leurs lumières sont affichées (`groups: show` pour tout voir, `only` pour ne garder que les groupes).
-- **Type** de chaque interrupteur : *lumière* si son nom ou son icône l'indique (lampe, plafonnier, spot, guirlande, applique…) ; *prise* s'il se déclare prise, si son nom ou le modèle de l'appareil l'indique (TS011F, Tapo P110, Shelly Plug…), ou s'il est la seule commande d'un appareil qui mesure sa puissance ; *interrupteur* sinon.
-- **Mesures** : capteurs du même appareil. Pour un appareil à **plusieurs voies** (Shelly 2PM, multiprise), chaque voie prend le capteur dont l'identifiant lui ressemble le plus (`…_channel_1` ↔ `…_channel_1_power`). Un capteur commun à plusieurs voies est marqué ⁂ et **compté une seule fois** dans les totaux.
-
-Si un appareil est pris à tort : `exclude`. S'il manque : `entities` ou une étiquette.
+L'éditeur écrit tout cela pour vous ; cette partie sert à régler à la main.
 
 ### Options
 
 | Option | Rôle | Défaut |
 | --- | --- | --- |
-| `title`, `icon` | Titre et icône | `Maison`, `mdi:home-lightning-bolt-outline` |
-| `labels` | Étiquettes : appareils et entités qui portent l'une d'elles | aucune |
-| `entities` | Entités affichées, dans cet ordre | trouvées seules |
+| **Contenu** | | |
+| `rooms` | Ordre des pièces, pièces masquées, appareils de chaque pièce | automatique |
+| `tiles` | Nom et icône de chaque tuile | aucun |
+| `contacts` | Capteur d'ouverture de chaque commande | automatique |
+| `modes` | Modes de la maison | aucun |
 | `domains` | Types cherchés automatiquement | `light`, `switch`, `fan` |
-| `rooms` | Ordre des pièces, pièces masquées et appareils de chaque pièce (écrit par l'éditeur, voir ci-dessous) | automatique |
-| `areas` | Pièces affichées, dans cet ordre (ignoré pour l'ordre si `rooms` est réglé) | toutes |
+| `labels` | Seulement les appareils qui portent l'une de ces étiquettes | aucune |
+| `entities` | Seulement ces entités, dans cet ordre | trouvées seules |
+| `areas` | Seulement ces pièces | toutes |
 | `exclude` | Entités à masquer | aucune |
 | `locked` | Entités sans commande (mesures seulement) | aucune |
 | `groups` | Groupes de lumières : `auto`, `show`, `only` | `auto` |
-| `confirm` | Second appui : `auto` (prises et interrupteurs), `always`, `never` | `auto` |
+| `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
+| **Comportement** | | |
+| `confirm` | Second appui : `auto` (prises, interrupteurs, ouvertures), `always`, `never` | `auto` |
+| `off_button` | « Tout éteindre » : `all`, `lights` (lumières seulement), `none` | `all` |
+| **Affichage** | | |
+| `title`, `icon` | Titre et icône | `Maison`, `mdi:home-lightning-bolt-outline` |
 | `layout` | `list` ou `buttons` | `list` |
-| `sort` | `name`, `power` (la plus forte d'abord) ou `kind` (lampes, prises, interrupteurs…) | `name` |
-| `show_filter` | Filtre Tout / Lumières / Prises / Autres | `true` |
+| `sort` | `name`, `power` ou `kind` | `name` |
+| `show_header` | En-tête ; `false` : une ligne discrète | `true` |
+| `show_filter` | Filtre Lumières / Prises / Autres | `true` |
 | `show_off` | Afficher ce qui est éteint | `true` |
 | `show_details` | Tension et courant | `true` |
-| `show_header` | En-tête ; `false` : une ligne discrète | `true` |
-| `show_scenes`, `scenes`, `max_scenes` | Boutons de scènes | `false`, toutes, `8` |
-| `tiles` | Nom et icône d'une tuile, sans toucher à Home Assistant (voir ci-dessous) | aucun |
-| `modes` | Modes de la maison, dans un bandeau (voir ci-dessous) | aucun |
-| `contacts` | Capteur d'ouverture de chaque commande (voir ci-dessous) | automatique |
-| `off_button` | « Tout éteindre » de la carte et des pièces : `all`, `lights` (lumières seulement) ou `none` | `all` |
 | `max_power` | Puissance du rouge, en W | `2500` |
 | `theme` | `v2` (bleu nuit), `auto`, `ha` | `v2` |
 | `language` | `auto`, `fr`, `en` | `auto` |
 
-Réglages par entité dans `entities` : `entity`, `name`, `icon`, `kind` (`light`, `plug`, `switch`, `fan`, `cover`, `other`), `power`, `energy`, `voltage`, `current`, `locked`, `confirm`, `max_power`, `contact`, `invert`.
+### Exemple complet
 
 ```yaml
 type: custom:commandes-card
-title: Cuisine
-areas: [cuisine]
-entities:
-  - light.plafonnier_cuisine
-  - entity: switch.shelly_2pm_channel_2
-    name: Spots plan de travail
-    kind: light
-  - entity: switch.congelateur
-    locked: true
-  - entity: switch.four
-    max_power: 3500
-sort: kind
-```
-
-### `rooms`
-
-L'éditeur l'écrit pour vous ; à la main :
-
-```yaml
 rooms:
-  - area: salon            # premier
-    entities:              # exactement ceux-ci, dans cet ordre
+  - area: salon                     # premier
+    entities:                       # exactement ceux-ci, dans cet ordre
       - light.plafonnier_salon
       - light.lampe_chevet
       - entity: switch.prise_tv
         locked: true
-  - area: cuisine          # deuxième, contenu automatique
+  - area: cuisine                   # deuxième, contenu automatique
   - area: garage
-    show: false            # masquée
-  - area: _none            # appareils sans pièce
-```
-
-Les pièces absentes de la liste suivent, dans l'ordre des étages puis des noms. Une pièce sans `entities` garde la recherche automatique ; avec `entities`, un nouvel appareil n'y apparaît qu'une fois coché.
-
-### Ouvertures et capteurs d'ouverture
-
-Une commande qui ouvre quelque chose (porte de garage en `cover`, relais à impulsion du portail en `switch`, `button` ou `script`) prend l'état d'un capteur d'ouverture (`binary_sensor` de classe porte, garage, ouverture ou fenêtre) :
-
-| Capteur | Couleur | Texte | Commande |
-| --- | --- | --- | --- |
-| ouvert | rouge | Ouvert | « Fermer » puis « Fermer ? » |
-| fermé | vert | Fermé | « Ouvrir » puis « Ouvrir ? » |
-| indisponible, inconnu | jaune | État inconnu | « Actionner » puis « Actionner ? » |
-
-L'en-tête de la carte compte les ouvertures ouvertes (« 1 ouverture ouverte »).
-
-- **Automatique** : un volet, ou une commande dont le nom évoque une ouverture (portail, porte, garage, portillon…), prend le capteur d'ouverture **de son propre appareil** s'il en a un (porte de garage Meross, Shelly avec entrée de contact…).
-- **Dans l'éditeur** : pièce dépliée, icône 🔗 d'une commande, puis le capteur. Les capteurs du même appareil et de la même pièce viennent en premier ; « Aucun » coupe l'association automatique ; « Inversé » pour un capteur à « off » quand c'est ouvert.
-- **En YAML** :
-
-```yaml
+    show: false                     # masquée
+  - area: _none                     # appareils sans pièce
+tiles:
+  light.plafonnier_salon:
+    name: Lustre
+    icon: mdi:chandelier
 contacts:
   switch.portail: binary_sensor.capteur_portail
   switch.portillon:
     sensor: binary_sensor.portillon_contact
     invert: true
-  cover.volet_salon: false       # pas de capteur, même automatique
-```
-
-### Renommer une tuile, changer son icône
-
-Dans l'éditeur, pièce dépliée, le crayon ✏️ d'une commande ouvre deux champs : **nom sur la carte** et **icône** (avec la recherche d'icônes de Home Assistant). Le champ du nom montre en grisé celui que la carte afficherait sans réglage ; vide, on revient à celui de Home Assistant. Ce réglage ne rend pas la pièce « personnalisée » : elle peut rester en automatique.
-
-```yaml
-tiles:
-  light.plafonnier_salon:
-    name: Lustre
-    icon: mdi:chandelier
-```
-
-Un `name` ou un `icon` posé dans `rooms` (ou `entities`) reste prioritaire ; l'éditeur le reprend dans `tiles` dès qu'on le modifie.
-
-### Modes de la maison
-
-Un `input_boolean` (ou un `switch`) qui décrit l'état de la maison plutôt qu'un appareil, comme un indicateur de présence qui passe à « absent » quand vous partez, mais que vous pouvez aussi basculer vous-même.
-
-- Il s'affiche dans un **bandeau sous l'en-tête**, pas dans une pièce : son nom, son état en clair et en couleur, **depuis quand** (« depuis 14:32 », « depuis mar. 18:05 », « depuis 3 j »), et un **sélecteur à deux positions**. Un appui sur l'autre position bascule ; un appui sur le nom ouvre la fiche et son historique.
-- **Libellés, icônes et couleurs déduits du nom** : absence → « À la maison » (vert) / « Absent » (orange) ; présence → l'inverse ; vacances → « À la maison » / « En vacances » ; nuit → « Jour » / « Nuit » ; sinon « Désactivé » / « Activé ».
-- **Dans l'éditeur**, section *Modes de la maison* : ajouter, retirer, ordonner, nom, libellé et couleur de chaque position, second appui pour valider.
-
-```yaml
+  cover.volet_salon: false          # pas de capteur, même automatique
 modes:
-  - input_boolean.absence                # tout automatique
+  - input_boolean.absence           # libellés déduits du nom
   - entity: input_boolean.mode_vacances
     name: Vacances
-    confirm: true                        # « Confirmer ? » avant de basculer
+    confirm: true
     off: { label: À la maison, icon: mdi:home-account, color: green }
     on: { label: En vacances, icon: mdi:palm-tree, color: orange }
+locked:
+  - switch.congelateur
 ```
 
-Couleurs : `green`, `orange`, `red`, `blue`, `yellow`, `purple`, `grey`, ou toute couleur CSS.
+- **`rooms`** : les pièces absentes de la liste suivent, dans l'ordre des étages puis des noms. Sans `entities`, une pièce garde la recherche automatique.
+- **Réglages d'une entité** (dans `rooms` ou `entities`) : `entity`, `name`, `icon`, `kind` (`light`, `plug`, `switch`, `fan`, `cover`, `other`), `power`, `energy`, `voltage`, `current`, `locked`, `confirm`, `max_power`, `contact`, `invert`. Un `name` ou `icon` posé là passe avant `tiles`.
+- **Couleurs des modes** : `green`, `orange`, `red`, `blue`, `yellow`, `purple`, `grey`, ou toute couleur CSS.
 
 ## Historique des versions
 
-### 0.5.0
+| Version | Nouveautés |
+| --- | --- |
+| 0.5.0 | Renommer une tuile et changer son icône dans l'éditeur (✏️, option `tiles`). |
+| 0.4.1 | Curseurs à glissement : un appui ou un défilement ne dérègle plus la luminosité. |
+| 0.4.0 | Modes de la maison (`modes`). Correction du bouton « Actionner » vide. |
+| 0.3.0 | Capteurs d'ouverture (`contacts`, 🔗) : rouge ouvert, vert fermé, jaune inconnu. |
+| 0.2.0 | Éditeur des pièces (`rooms`), puissance et « Tout éteindre » par pièce. « Tout éteindre » coupe tout, plus seulement les lumières (`off_button: lights` pour l'ancien comportement). |
+| 0.1.0 | Première version. |
 
-- ✨ Renommer une tuile et changer son icône depuis l'éditeur (crayon ✏️), sans passer par le YAML ni rendre la pièce personnalisée (option `tiles`).
-
-### 0.4.1
-
-- 🐛 Curseurs : un appui sur la piste ou un défilement vertical ne dérègle plus la luminosité. Seul un glissement horizontal volontaire règle la valeur, à partir de la valeur actuelle, sans saut.
-
-### 0.4.0
-
-- ✨ Modes de la maison (`modes`, éditeur) : bandeau avec état en clair, durée et sélecteur à deux positions ; libellés et couleurs déduits du nom ou réglés.
-- 🐛 Ouverture dont le capteur ne répond pas : le bouton « Actionner » était vide.
-
-### 0.3.0
-
-- ✨ Capteurs d'ouverture associés aux commandes (`contacts`, éditeur 🔗) : rouge ouvert, vert fermé, jaune inconnu ; association automatique avec le capteur du même appareil.
-- ✨ Ouvertures : bouton « Ouvrir » / « Fermer » et second appui de confirmation, icône portail, garage ou porte selon l'état, compte des ouvertures ouvertes dans l'en-tête.
-
-### 0.2.0
-
-- ✨ Éditeur des pièces : commandes de chaque pièce à cocher et à ordonner, ordre des pièces, pièces masquées (option `rooms`).
-- ✨ Puissance totale et « Tout éteindre » dans l'en-tête de chaque pièce, comme dans celui de la carte, avec un second appui pour valider (`off_button`).
-- 🔄 « Tout éteindre » coupe tout ce qui est allumé (sauf les appareils verrouillés), plus seulement les lumières ; `off_button: lights` pour l'ancien comportement.
-
-### 0.1.0
-
-- ✨ Première version.
+Détail : [releases](https://github.com/XdLog/commandes-card/releases).
 
 ## Crédits et licence
 
-MIT. Style, gestes et code d'origine : [Marlboro62](https://github.com/Marlboro62) ([prises-card](https://github.com/Marlboro62/prises-card),
-[lumieres-card](https://github.com/Marlboro62/lumieres-card)). Si ces cartes vous plaisent, soutenez son travail.
+MIT. Style, gestes et code d'origine : [Marlboro62](https://github.com/Marlboro62) ([prises-card](https://github.com/Marlboro62/prises-card), [lumieres-card](https://github.com/Marlboro62/lumieres-card)). Si ces cartes vous plaisent, soutenez son travail.
